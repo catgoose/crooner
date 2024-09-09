@@ -11,6 +11,12 @@ examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authen
 
 ![image](https://github.com/catgoose/crooner/blob/4be4936dedb862dfe0754cb61f26795ca97b3c7d/it_sucks.png)
 
+## Installation
+
+```bash
+go get github.com/catgoose/crooner@v1.0.0
+```
+
 ## Usage with echo
 
 ```go
