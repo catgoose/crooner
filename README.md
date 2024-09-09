@@ -74,6 +74,8 @@ func main() {
 }
 ```
 
+In Azure app registration remember to enable `ID tokens` to be issued
+
 Crooner uses [gorilla](https://gorilla.github.io/) for session state management.
 Open a PR if you want to a different session management
 
