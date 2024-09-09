@@ -14,6 +14,20 @@ examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authen
 ## Usage with echo
 
 ```go
+import (
+ "context"
+ "log"
+ "net/http"
+ "os"
+
+ "github.com/catgoose/crooner"
+ "github.com/gorilla/sessions"
+ "github.com/labstack/echo"
+ "github.com/labstack/echo/middleware"
+)
+
+var store = sessions.NewCookieStore([]byte(internals.os.Getenv("SESSION_SECRET")))
+
 func authMiddleware(next echo.HandlerFunc) echo.HandlerFunc {
  return func(c echo.Context) error {
   if c.Path() == "/login" || c.Path() == "/callback" || c.Path() == "/logout" {
