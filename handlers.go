@@ -1,7 +1,6 @@
 package crooner
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -67,7 +66,7 @@ func (a *AuthHandlerConfig) CallbackHandler() echo.HandlerFunc {
 			return c.String(http.StatusBadRequest, "Authorization code not provided")
 		}
 
-		token, err := a.AuthConfig.ExchangeToken(context.Background(), code, codeVerifier)
+		token, err := a.AuthConfig.ExchangeToken(c.Request().Context(), code, codeVerifier)
 		if err != nil {
 			return c.String(http.StatusInternalServerError, "Failed to exchange token")
 		}
@@ -77,7 +76,7 @@ func (a *AuthHandlerConfig) CallbackHandler() echo.HandlerFunc {
 			return c.String(http.StatusInternalServerError, "ID token not found in token response")
 		}
 
-		claims, err := a.AuthConfig.VerifyIDToken(context.Background(), idToken)
+		claims, err := a.AuthConfig.VerifyIDToken(c.Request().Context(), idToken)
 		if err != nil {
 			return c.String(http.StatusInternalServerError, "Failed to verify ID token")
 		}
