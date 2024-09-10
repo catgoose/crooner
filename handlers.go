@@ -6,115 +6,111 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
+	"github.com/labstack/echo/v4"
 )
 
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
 	AuthConfig *AuthConfig
-	Store      *sessions.CookieStore
 }
 
 // NewAuthHandlerConfig creates a new configuration for the auth handlers
-func NewAuthHandlerConfig(authConfig *AuthConfig, store *sessions.CookieStore) *AuthHandlerConfig {
+func NewAuthHandlerConfig(authConfig *AuthConfig) *AuthHandlerConfig {
 	return &AuthHandlerConfig{
 		AuthConfig: authConfig,
-		Store:      store,
 	}
 }
 
 // LoginHandler creates a handler function for the login route
-// The caller can provide a redirectURL to decide where the user should be redirected after login.
-func (a *AuthHandlerConfig) LoginHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (a *AuthHandlerConfig) LoginHandler() echo.HandlerFunc {
+	return func(c echo.Context) error {
 		codeVerifier, err := a.AuthConfig.GenerateCodeVerifier()
 		if err != nil {
-			http.Error(w, "Failed to generate code verifier", http.StatusInternalServerError)
-			return
+			return c.String(http.StatusInternalServerError, "Failed to generate code verifier")
 		}
 
 		codeChallenge := a.AuthConfig.GenerateCodeChallenge(codeVerifier)
-		session, _ := a.Store.Get(r, "session-name")
-		session.Values["code_verifier"] = codeVerifier
-		if err := session.Save(r, w); err != nil {
-			http.Error(w, "Failed to save session", http.StatusInternalServerError)
-			return
+
+		sess, err := session.Get("session-name", c)
+		if err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to get session")
+		}
+
+		sess.Values["code_verifier"] = codeVerifier
+		err = sess.Save(c.Request(), c.Response())
+		if err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to save session")
 		}
 
 		// Return the login URL to the caller
 		loginURL := a.AuthConfig.GetLoginURL("state", codeChallenge)
-		w.Header().Set("Location", loginURL)
-		w.WriteHeader(http.StatusTemporaryRedirect)
+		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
 }
 
 // CallbackHandler creates a handler function for the callback route
-// The caller can provide a redirectURL to decide where the user should be redirected after successful login.
-func (a *AuthHandlerConfig) CallbackHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		session, err := a.Store.Get(r, "session-name")
+func (a *AuthHandlerConfig) CallbackHandler() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		sess, err := session.Get("session-name", c)
 		if err != nil {
-			http.Error(w, "Failed to get session", http.StatusInternalServerError)
-			return
+			return c.String(http.StatusInternalServerError, "Failed to get session")
 		}
 
-		codeVerifier, ok := session.Values["code_verifier"].(string)
+		codeVerifier, ok := sess.Values["code_verifier"].(string)
 		if !ok {
-			http.Error(w, "Code verifier not found", http.StatusBadRequest)
-			return
+			return c.String(http.StatusBadRequest, "Code verifier not found")
 		}
 
-		code := r.URL.Query().Get("code")
+		code := c.QueryParam("code")
 		if code == "" {
-			http.Error(w, "Authorization code not provided", http.StatusBadRequest)
-			return
+			return c.String(http.StatusBadRequest, "Authorization code not provided")
 		}
 
 		token, err := a.AuthConfig.ExchangeToken(context.Background(), code, codeVerifier)
 		if err != nil {
-			http.Error(w, "Failed to exchange token", http.StatusInternalServerError)
-			return
+			return c.String(http.StatusInternalServerError, "Failed to exchange token")
 		}
 
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
-			http.Error(w, "ID token not found in token response", http.StatusInternalServerError)
-			return
+			return c.String(http.StatusInternalServerError, "ID token not found in token response")
 		}
 
 		claims, err := a.AuthConfig.VerifyIDToken(context.Background(), idToken)
 		if err != nil {
-			http.Error(w, "Failed to verify ID token", http.StatusInternalServerError)
-			return
+			return c.String(http.StatusInternalServerError, "Failed to verify ID token")
 		}
 
-		session.Values["user"] = claims["email"]
-		if err := session.Save(r, w); err != nil {
-			http.Error(w, "Failed to save session", http.StatusInternalServerError)
-			return
+		sess.Values["user"] = claims["email"]
+		err = sess.Save(c.Request(), c.Response())
+		if err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to save session")
 		}
 
 		// Redirect to the provided URL
-		w.Header().Set("Location", a.AuthConfig.LoginURLRedirect)
-		w.WriteHeader(http.StatusFound)
+		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
 	}
 }
 
 // LogoutHandler creates a handler function for the logout route
-func (a *AuthHandlerConfig) LogoutHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+func (a *AuthHandlerConfig) LogoutHandler() echo.HandlerFunc {
+	return func(c echo.Context) error {
 		// Clear the local session
-		session, _ := a.Store.Get(r, "session-name")
-		session.Values["user"] = ""
-		if err := session.Save(r, w); err != nil {
-			http.Error(w, "Failed to save session", http.StatusInternalServerError)
-			return
+		sess, err := session.Get("session-name", c)
+		if err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to get session")
+		}
+
+		delete(sess.Values, "user")
+		err = sess.Save(c.Request(), c.Response())
+		if err != nil {
+			return c.String(http.StatusInternalServerError, "Failed to save session")
 		}
 
 		// Ensure the redirect URL is valid
 		if !isAbsoluteURL(a.AuthConfig.LogoutURLRedirect) {
-			http.Error(w, "Invalid redirect URL", http.StatusBadRequest)
-			return
+			return c.String(http.StatusBadRequest, "Invalid redirect URL")
 		}
 
 		// Azure AD logout URL
@@ -125,7 +121,7 @@ func (a *AuthHandlerConfig) LogoutHandler() http.HandlerFunc {
 		)
 
 		// Redirect the user to the Azure AD logout URL
-		http.Redirect(w, r, logoutURL, http.StatusFound)
+		return c.Redirect(http.StatusFound, logoutURL)
 	}
 }
 
