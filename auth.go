@@ -43,7 +43,6 @@ type AuthRoutes struct {
 	Login      string   // Login route
 	Logout     string   // Logout route
 	Callback   string   // Callback route for receiving authorization code
-	Redirect   string   // Redirect after receiving auth token
 	AuthExempt []string // Routes to be exempt from auth
 }
 
@@ -104,7 +103,7 @@ func validateAuthParams(params *AuthConfigParams) error {
 	if params.SessionSecret == "" {
 		return fmt.Errorf("missing required parameter: SessionSecret")
 	}
-	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" || params.AuthRoutes.Redirect == "" {
+	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
 		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
 	}
 	return nil
