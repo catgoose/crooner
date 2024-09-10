@@ -22,28 +22,59 @@ type AuthConfig struct {
 	OAuth2Config      *oauth2.Config        // OAuth2 configuration including ClientID, ClientSecret, etc.
 	Provider          *oidc.Provider        // OIDC Provider for Azure AD
 	Verifier          *oidc.IDTokenVerifier // Verifier to verify ID tokens
+	AuthRoutes        *AuthRoutes           // Routes for authentication
 	TenantID          string                // Azure AD Tenant ID
 	LogoutURLRedirect string                // URL to redirect after logout
 	LoginURLRedirect  string                // URL to redirect after login
-	CodeVerifier      string                // PKCE code verifier used during authentication
 	SessionSecret     string                // Session secret for cookie store
 }
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
 type AuthConfigParams struct {
-	ClientID          string   // Azure AD Client ID
-	ClientSecret      string   // Azure AD Client Secret
-	TenantID          string   // Azure AD Tenant ID
-	RedirectURL       string   // URL to redirect after login
-	LogoutURLRedirect string   // URL to redirect after logout
-	LoginURLRedirect  string   // URL to redirect after login
-	SessionSecret     string   // Session secret for cookie store
-	Scopes            []string // Scopes to request during authentication. profile and email are default
+	ClientID          string      // Azure AD Client ID
+	ClientSecret      string      // Azure AD Client Secret
+	TenantID          string      // Azure AD Tenant ID
+	RedirectURL       string      // URL to redirect after login
+	LogoutURLRedirect string      // URL to redirect after logout
+	LoginURLRedirect  string      // URL to redirect after login
+	SessionSecret     string      // Session secret for cookie store
+	AuthRoutes        *AuthRoutes // Routes for authentication
+	Scopes            []string    // Scopes to request during authentication. profile and email are default
+}
+
+// AuthRoutes contains the routes for authentication
+type AuthRoutes struct {
+	Login      string   // Login route
+	Logout     string   // Logout route
+	Callback   string   // Callback route for receiving authorization code
+	Redirect   string   // Redirect after receiving auth token
+	AuthExempt []string // Routes to be exempt from auth
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
 // It initializes the OAuth2 configuration and OIDC provider for Azure AD
 func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, error) {
+	// Validate required parameters
+	if params.TenantID == "" {
+		return nil, fmt.Errorf("missing required parameter: TenantID")
+	}
+	if params.ClientID == "" {
+		return nil, fmt.Errorf("missing required parameter: ClientID")
+	}
+	if params.ClientSecret == "" {
+		return nil, fmt.Errorf("missing required parameter: ClientSecret")
+	}
+	if params.RedirectURL == "" {
+		return nil, fmt.Errorf("missing required parameter: RedirectURL")
+	}
+	if params.SessionSecret == "" {
+		return nil, fmt.Errorf("missing required parameter: SessionSecret")
+	}
+	routes := params.AuthRoutes
+	if routes.Login == "" || routes.Logout == "" || routes.Callback == "" || routes.Redirect == "" {
+		return nil, fmt.Errorf("missing required auth routes: Login, Logout, and Callback, and Redirect routes must be defined")
+	}
+
 	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
 	if err != nil {
 		return nil, err
@@ -66,6 +97,7 @@ func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, 
 		LogoutURLRedirect: params.LogoutURLRedirect,
 		LoginURLRedirect:  params.LoginURLRedirect,
 		SessionSecret:     params.SessionSecret,
+		AuthRoutes:        params.AuthRoutes,
 	}
 
 	return config, nil
@@ -101,23 +133,14 @@ func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFun
 	}
 }
 
-// AuthRoutes contains the routes for authentication
-type AuthRoutes struct {
-	Login      string   // Login route
-	Logout     string   // Logout route
-	Callback   string   // Callback route for receiving authorization code
-	Redirect   string   // Redirect after receiving auth token
-	AuthExempt []string // Routes to be exempt from auth
-}
-
-func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo, routes AuthRoutes) {
+// SetupAuth initializes the authentication middleware and routes
+func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	store := sessions.NewCookieStore([]byte(a.AuthConfig.SessionSecret))
+
 	e.Use(session.Middleware(store))
+	e.Use(a.authMiddleware(*a.AuthConfig.AuthRoutes))
 
-	// Setup middleware
-	e.Use(a.authMiddleware(routes))
-
-	// Setup routes using the passed in AuthRoutes
+	routes := a.AuthConfig.AuthRoutes
 	e.GET(routes.Login, a.LoginHandler())
 	e.GET(routes.Callback, a.CallbackHandler())
 	e.GET(routes.Logout, a.LogoutHandler())
