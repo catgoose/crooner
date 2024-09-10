@@ -17,28 +17,15 @@ type AuthHandlerConfig struct {
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
-// allows for setting routes to be exempted from auth
 func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			// Exempt login, logout, and callback routes from authentication
-			if strings.HasPrefix(c.Path(), routes.Login) ||
-				strings.HasPrefix(c.Path(), routes.Callback) ||
-				strings.HasPrefix(c.Path(), routes.Logout) {
+			if a.isAuthExemptRoute(c, routes) {
 				return next(c)
 			}
 
-			// Check if the current path is in the additional exempt routes
-			for _, route := range routes.AuthExempt {
-				if strings.HasPrefix(c.Path(), route) {
-					return next(c)
-				}
-			}
-
-			// Retrieve the session
-			sess, err := session.Get("session-name", c)
-			if err != nil || sess.Values["user"] == nil {
-				// Redirect to login if no valid session is found
+			// Retrieve and validate session
+			if sess, err := a.getSession(c); err != nil || sess.Values["user"] == nil {
 				return c.Redirect(http.StatusFound, routes.Login)
 			}
 
@@ -63,25 +50,18 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 // loginHandler creates a handler function for the login route
 func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		codeVerifier, err := a.AuthConfig.GenerateCodeVerifier()
+		codeVerifier, err := GenerateCodeVerifier()
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to generate code verifier")
+			return a.handleError(c, http.StatusInternalServerError, "Failed to generate code verifier", err)
 		}
 
-		codeChallenge := a.AuthConfig.GenerateCodeChallenge(codeVerifier)
+		codeChallenge := GenerateCodeChallenge(codeVerifier)
 
-		sess, err := session.Get("session-name", c)
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to get session")
+		// Save code verifier in session
+		if err := a.saveSessionValue(c, "code_verifier", codeVerifier); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 
-		sess.Values["code_verifier"] = codeVerifier
-		err = sess.Save(c.Request(), c.Response())
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to save session")
-		}
-
-		// Return the login URL to the caller
 		loginURL := a.AuthConfig.GetLoginURL("state", codeChallenge)
 		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
@@ -90,43 +70,40 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		sess, err := session.Get("session-name", c)
+		sess, err := a.getSession(c)
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to get session")
+			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
 
 		codeVerifier, ok := sess.Values["code_verifier"].(string)
 		if !ok {
-			return c.String(http.StatusBadRequest, "Code verifier not found")
+			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
 		}
 
 		code := c.QueryParam("code")
 		if code == "" {
-			return c.String(http.StatusBadRequest, "Authorization code not provided")
+			return a.handleError(c, http.StatusBadRequest, "Authorization code not provided", nil)
 		}
 
 		token, err := a.AuthConfig.ExchangeToken(c.Request().Context(), code, codeVerifier)
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to exchange token")
+			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
 		}
 
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
-			return c.String(http.StatusInternalServerError, "ID token not found in token response")
+			return a.handleError(c, http.StatusInternalServerError, "ID token not found in token response", nil)
 		}
 
 		claims, err := a.AuthConfig.VerifyIDToken(c.Request().Context(), idToken)
 		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to verify ID token")
+			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
 
-		sess.Values["user"] = claims["email"]
-		err = sess.Save(c.Request(), c.Response())
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to save session")
+		if err := a.saveSessionValue(c, "user", claims["email"]); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 
-		// Redirect to the provided URL
 		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
 	}
 }
@@ -134,41 +111,70 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 // logoutHandler creates a handler function for the logout route
 func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Clear the local session
-		sess, err := session.Get("session-name", c)
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to get session")
+		if err := a.clearSession(c); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear session", err)
 		}
 
-		delete(sess.Values, "user")
-		err = sess.Save(c.Request(), c.Response())
-		if err != nil {
-			return c.String(http.StatusInternalServerError, "Failed to save session")
-		}
-
-		// Ensure the redirect URL is valid
 		if !a.isAbsoluteURL(a.AuthConfig.LogoutURLRedirect) {
-			return c.String(http.StatusBadRequest, "Invalid redirect URL")
+			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", nil)
 		}
 
-		// Azure AD logout URL
 		logoutURL := fmt.Sprintf(
 			"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
 			a.AuthConfig.TenantID,
-			url.QueryEscape(a.AuthConfig.LogoutURLRedirect), // Escape the redirect URL
+			url.QueryEscape(a.AuthConfig.LogoutURLRedirect),
 		)
 
-		// Redirect the user to the Azure AD logout URL
 		return c.Redirect(http.StatusFound, logoutURL)
 	}
 }
 
-// isAbsoluteURL checks if the given URL is an absolute URL
+// isAuthExemptRoute checks if the current route is exempt from authentication
+func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes AuthRoutes) bool {
+	if strings.HasPrefix(c.Path(), routes.Login) ||
+		strings.HasPrefix(c.Path(), routes.Callback) ||
+		strings.HasPrefix(c.Path(), routes.Logout) {
+		return true
+	}
+	for _, route := range routes.AuthExempt {
+		if strings.HasPrefix(c.Path(), route) {
+			return true
+		}
+	}
+	return false
+}
+
+// Session helper methods
+func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
+	return session.Get("session-name", c)
+}
+
+func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value interface{}) error {
+	sess, err := a.getSession(c)
+	if err != nil {
+		return err
+	}
+	sess.Values[key] = value
+	return sess.Save(c.Request(), c.Response())
+}
+
+func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
+	sess, err := a.getSession(c)
+	if err != nil {
+		return err
+	}
+	delete(sess.Values, "user")
+	return sess.Save(c.Request(), c.Response())
+}
+
+func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
+	if err != nil {
+		fmt.Println("Error:", err)
+	}
+	return c.String(status, message)
+}
+
 func (a *AuthHandlerConfig) isAbsoluteURL(rawURL string) bool {
 	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-	// Check if the URL has a valid scheme and host
-	return parsedURL.Scheme != "" && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+	return err == nil && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
 }

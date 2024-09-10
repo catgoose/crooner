@@ -15,7 +15,7 @@ import (
 
 // AuthConfig contains the configuration for Azure AD authentication
 type AuthConfig struct {
-	OAuth2Config      *oauth2.Config        // OAuth2 configuration including ClientID, ClientSecret, etc.
+	OAuth2Config      *oauth2.Config        // OAuth2 configuration
 	Provider          *oidc.Provider        // OIDC Provider for Azure AD
 	Verifier          *oidc.IDTokenVerifier // Verifier to verify ID tokens
 	AuthRoutes        *AuthRoutes           // Routes for authentication
@@ -35,7 +35,7 @@ type AuthConfigParams struct {
 	LoginURLRedirect  string      // URL to redirect after login
 	SessionSecret     string      // Session secret for cookie store
 	AuthRoutes        *AuthRoutes // Routes for authentication
-	Scopes            []string    // Scopes to request during authentication. profile and email are default
+	AdditionalScopes  []string    // Additional scopes to request during authentication
 }
 
 // AuthRoutes contains the routes for authentication
@@ -48,36 +48,20 @@ type AuthRoutes struct {
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
-// It initializes the OAuth2 configuration and OIDC provider for Azure AD
 func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) error {
-	// Validate required parameters
-	if params.TenantID == "" {
-		return fmt.Errorf("missing required parameter: TenantID")
-	}
-	if params.ClientID == "" {
-		return fmt.Errorf("missing required parameter: ClientID")
-	}
-	if params.ClientSecret == "" {
-		return fmt.Errorf("missing required parameter: ClientSecret")
-	}
-	if params.RedirectURL == "" {
-		return fmt.Errorf("missing required parameter: RedirectURL")
-	}
-	if params.SessionSecret == "" {
-		return fmt.Errorf("missing required parameter: SessionSecret")
-	}
-	routes := params.AuthRoutes
-	if routes.Login == "" || routes.Logout == "" || routes.Callback == "" || routes.Redirect == "" {
-		return fmt.Errorf("missing required auth routes: Login, Logout, and Callback, and Redirect routes must be defined")
-	}
-
-	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
-	if err != nil {
+	// Validate parameters
+	if err := validateAuthParams(params); err != nil {
 		return err
 	}
 
+	// Set up OIDC provider and OAuth2 configuration
+	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
+	if err != nil {
+		return fmt.Errorf("failed to initialize OIDC provider: %w", err)
+	}
+
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
-	scopes = append(scopes, params.Scopes...)
+	scopes = append(scopes, params.AdditionalScopes...)
 
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
@@ -103,9 +87,31 @@ func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) 
 	return nil
 }
 
+// validateAuthParams ensures all necessary parameters are provided
+func validateAuthParams(params *AuthConfigParams) error {
+	if params.TenantID == "" {
+		return fmt.Errorf("missing required parameter: TenantID")
+	}
+	if params.ClientID == "" {
+		return fmt.Errorf("missing required parameter: ClientID")
+	}
+	if params.ClientSecret == "" {
+		return fmt.Errorf("missing required parameter: ClientSecret")
+	}
+	if params.RedirectURL == "" {
+		return fmt.Errorf("missing required parameter: RedirectURL")
+	}
+	if params.SessionSecret == "" {
+		return fmt.Errorf("missing required parameter: SessionSecret")
+	}
+	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" || params.AuthRoutes.Redirect == "" {
+		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
+	}
+	return nil
+}
+
 // GenerateCodeVerifier generates a random PKCE code verifier
-// This verifier is used in the OAuth2 flow to increase security
-func (c *AuthConfig) GenerateCodeVerifier() (string, error) {
+func GenerateCodeVerifier() (string, error) {
 	verifier := make([]byte, 64)
 	if _, err := rand.Read(verifier); err != nil {
 		return "", err
@@ -113,15 +119,13 @@ func (c *AuthConfig) GenerateCodeVerifier() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(verifier), nil
 }
 
-// GenerateCodeChallenge generates a SHA256 code challenge from the provided verifier
-// This code challenge is used in the PKCE flow during authentication
-func (c *AuthConfig) GenerateCodeChallenge(verifier string) string {
+// GenerateCodeChallenge generates a SHA256 code challenge from the verifier
+func GenerateCodeChallenge(verifier string) string {
 	hash := sha256.Sum256([]byte(verifier))
 	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
 // GetLoginURL constructs and returns the Azure AD login URL
-// It uses the provided state and PKCE code challenge
 func (c *AuthConfig) GetLoginURL(state, codeChallenge string) string {
 	return c.OAuth2Config.AuthCodeURL(state,
 		oauth2.AccessTypeOffline,
@@ -131,22 +135,20 @@ func (c *AuthConfig) GetLoginURL(state, codeChallenge string) string {
 }
 
 // ExchangeToken exchanges the authorization code for an access token
-// This method uses the PKCE code verifier to complete the OAuth2 flow
 func (c *AuthConfig) ExchangeToken(ctx context.Context, code, codeVerifier string) (*oauth2.Token, error) {
 	return c.OAuth2Config.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 }
 
 // VerifyIDToken verifies the provided ID token using the OIDC provider
-// It extracts and returns the claims from the ID token
 func (c *AuthConfig) VerifyIDToken(ctx context.Context, idToken string) (map[string]interface{}, error) {
 	idTokenObj, err := c.Verifier.Verify(ctx, idToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
 	var claims map[string]interface{}
 	if err := idTokenObj.Claims(&claims); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse ID token claims: %w", err)
 	}
 	return claims, nil
 }
