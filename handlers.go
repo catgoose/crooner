@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
@@ -13,6 +14,37 @@ import (
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
 	AuthConfig *AuthConfig
+}
+
+// authMiddleware generates a middleware to enforce authentication based on session data
+// allows for setting routes to be exempted from auth
+func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Exempt login, logout, and callback routes from authentication
+			if strings.HasPrefix(c.Path(), routes.Login) ||
+				strings.HasPrefix(c.Path(), routes.Callback) ||
+				strings.HasPrefix(c.Path(), routes.Logout) {
+				return next(c)
+			}
+
+			// Check if the current path is in the additional exempt routes
+			for _, route := range routes.AuthExempt {
+				if strings.HasPrefix(c.Path(), route) {
+					return next(c)
+				}
+			}
+
+			// Retrieve the session
+			sess, err := session.Get("session-name", c)
+			if err != nil || sess.Values["user"] == nil {
+				// Redirect to login if no valid session is found
+				return c.Redirect(http.StatusFound, routes.Login)
+			}
+
+			return next(c)
+		}
+	}
 }
 
 // SetupAuth initializes the authentication middleware and routes

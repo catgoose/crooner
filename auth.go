@@ -5,11 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-	"net/http"
-	"strings"
 
 	"github.com/coreos/go-oidc"
-	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/rand"
 	"golang.org/x/oauth2"
@@ -104,36 +101,6 @@ func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) 
 	}
 	authHandlerConfig.SetupAuth(e)
 	return nil
-}
-
-// authMiddleware generates a middleware to enforce authentication based on session data
-func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Exempt login, logout, and callback routes from authentication
-			if strings.HasPrefix(c.Path(), routes.Login) ||
-				strings.HasPrefix(c.Path(), routes.Callback) ||
-				strings.HasPrefix(c.Path(), routes.Logout) {
-				return next(c)
-			}
-
-			// Check if the current path is in the additional exempt routes
-			for _, route := range routes.AuthExempt {
-				if strings.HasPrefix(c.Path(), route) {
-					return next(c)
-				}
-			}
-
-			// Retrieve the session
-			sess, err := session.Get("session-name", c)
-			if err != nil || sess.Values["user"] == nil {
-				// Redirect to login if no valid session is found
-				return c.Redirect(http.StatusFound, routes.Login)
-			}
-
-			return next(c)
-		}
-	}
 }
 
 // GenerateCodeVerifier generates a random PKCE code verifier
