@@ -64,7 +64,6 @@ func getAzureConfig() *crooner.AuthConfigParams {
    Login:    "/login",
    Logout:   "/logout",
    Callback: "/callback",
-   Redirect: "/login",
    AuthExempt: []string{"/profile", "/about"} // optional, routes exempt from auth middleware
   },
   AdditionalScopes: []string{"User"}, // optional, additional scopes to request
