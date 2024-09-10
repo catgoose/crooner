@@ -5,8 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/coreos/go-oidc"
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
+	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/rand"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
@@ -21,6 +26,7 @@ type AuthConfig struct {
 	LogoutURLRedirect string                // URL to redirect after logout
 	LoginURLRedirect  string                // URL to redirect after login
 	CodeVerifier      string                // PKCE code verifier used during authentication
+	SessionSecret     string                // Session secret for cookie store
 }
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
@@ -31,6 +37,7 @@ type AuthConfigParams struct {
 	RedirectURL       string   // URL to redirect after login
 	LogoutURLRedirect string   // URL to redirect after logout
 	LoginURLRedirect  string   // URL to redirect after login
+	SessionSecret     string   // Session secret for cookie store
 	Scopes            []string // Scopes to request during authentication. profile and email are default
 }
 
@@ -58,9 +65,62 @@ func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, 
 		TenantID:          params.TenantID,
 		LogoutURLRedirect: params.LogoutURLRedirect,
 		LoginURLRedirect:  params.LoginURLRedirect,
+		SessionSecret:     params.SessionSecret,
 	}
 
 	return config, nil
+}
+
+// authMiddleware generates a middleware to enforce authentication based on session data
+func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Exempt login, logout, and callback routes from authentication
+			if strings.HasPrefix(c.Path(), routes.Login) ||
+				strings.HasPrefix(c.Path(), routes.Callback) ||
+				strings.HasPrefix(c.Path(), routes.Logout) {
+				return next(c)
+			}
+
+			// Check if the current path is in the additional exempt routes
+			for _, route := range routes.AuthExempt {
+				if strings.HasPrefix(c.Path(), route) {
+					return next(c)
+				}
+			}
+
+			// Retrieve the session
+			sess, err := session.Get("session-name", c)
+			if err != nil || sess.Values["user"] == nil {
+				// Redirect to login if no valid session is found
+				return c.Redirect(http.StatusFound, routes.Login)
+			}
+
+			return next(c)
+		}
+	}
+}
+
+// AuthRoutes contains the routes for authentication
+type AuthRoutes struct {
+	Login      string   // Login route
+	Logout     string   // Logout route
+	Callback   string   // Callback route for receiving authorization code
+	Redirect   string   // Redirect after receiving auth token
+	AuthExempt []string // Routes to be exempt from auth
+}
+
+func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo, routes AuthRoutes) {
+	store := sessions.NewCookieStore([]byte(a.AuthConfig.SessionSecret))
+	e.Use(session.Middleware(store))
+
+	// Setup middleware
+	e.Use(a.authMiddleware(routes))
+
+	// Setup routes using the passed in AuthRoutes
+	e.GET(routes.Login, a.LoginHandler())
+	e.GET(routes.Callback, a.CallbackHandler())
+	e.GET(routes.Logout, a.LogoutHandler())
 }
 
 // GenerateCodeVerifier generates a random PKCE code verifier
