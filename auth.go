@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc"
-	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/rand"
@@ -53,37 +52,37 @@ type AuthRoutes struct {
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
 // It initializes the OAuth2 configuration and OIDC provider for Azure AD
-func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, error) {
+func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) error {
 	// Validate required parameters
 	if params.TenantID == "" {
-		return nil, fmt.Errorf("missing required parameter: TenantID")
+		return fmt.Errorf("missing required parameter: TenantID")
 	}
 	if params.ClientID == "" {
-		return nil, fmt.Errorf("missing required parameter: ClientID")
+		return fmt.Errorf("missing required parameter: ClientID")
 	}
 	if params.ClientSecret == "" {
-		return nil, fmt.Errorf("missing required parameter: ClientSecret")
+		return fmt.Errorf("missing required parameter: ClientSecret")
 	}
 	if params.RedirectURL == "" {
-		return nil, fmt.Errorf("missing required parameter: RedirectURL")
+		return fmt.Errorf("missing required parameter: RedirectURL")
 	}
 	if params.SessionSecret == "" {
-		return nil, fmt.Errorf("missing required parameter: SessionSecret")
+		return fmt.Errorf("missing required parameter: SessionSecret")
 	}
 	routes := params.AuthRoutes
 	if routes.Login == "" || routes.Logout == "" || routes.Callback == "" || routes.Redirect == "" {
-		return nil, fmt.Errorf("missing required auth routes: Login, Logout, and Callback, and Redirect routes must be defined")
+		return fmt.Errorf("missing required auth routes: Login, Logout, and Callback, and Redirect routes must be defined")
 	}
 
 	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 	scopes = append(scopes, params.Scopes...)
 
-	config := &AuthConfig{
+	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
 			ClientID:     params.ClientID,
 			ClientSecret: params.ClientSecret,
@@ -100,7 +99,11 @@ func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, 
 		AuthRoutes:        params.AuthRoutes,
 	}
 
-	return config, nil
+	authHandlerConfig := &AuthHandlerConfig{
+		AuthConfig: authConfig,
+	}
+	authHandlerConfig.SetupAuth(e)
+	return nil
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
@@ -131,19 +134,6 @@ func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFun
 			return next(c)
 		}
 	}
-}
-
-// SetupAuth initializes the authentication middleware and routes
-func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
-	store := sessions.NewCookieStore([]byte(a.AuthConfig.SessionSecret))
-
-	e.Use(session.Middleware(store))
-	e.Use(a.authMiddleware(*a.AuthConfig.AuthRoutes))
-
-	routes := a.AuthConfig.AuthRoutes
-	e.GET(routes.Login, a.LoginHandler())
-	e.GET(routes.Callback, a.CallbackHandler())
-	e.GET(routes.Logout, a.LogoutHandler())
 }
 
 // GenerateCodeVerifier generates a random PKCE code verifier
