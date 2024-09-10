@@ -25,12 +25,13 @@ type AuthConfig struct {
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
 type AuthConfigParams struct {
-	ClientID          string // Azure AD Client ID
-	ClientSecret      string // Azure AD Client Secret
-	TenantID          string // Azure AD Tenant ID
-	RedirectURL       string // URL to redirect after login
-	LogoutURLRedirect string // URL to redirect after logout
-	LoginURLRedirect  string // URL to redirect after login
+	ClientID          string   // Azure AD Client ID
+	ClientSecret      string   // Azure AD Client Secret
+	TenantID          string   // Azure AD Tenant ID
+	RedirectURL       string   // URL to redirect after login
+	LogoutURLRedirect string   // URL to redirect after logout
+	LoginURLRedirect  string   // URL to redirect after login
+	Scopes            []string // Scopes to request during authentication. profile and email are default
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
@@ -41,13 +42,16 @@ func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthConfig, 
 		return nil, err
 	}
 
+	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
+	scopes = append(scopes, params.Scopes...)
+
 	config := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
 			ClientID:     params.ClientID,
 			ClientSecret: params.ClientSecret,
 			Endpoint:     microsoft.AzureADEndpoint(params.TenantID),
 			RedirectURL:  params.RedirectURL,
-			Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+			Scopes:       scopes,
 		},
 		Provider:          provider,
 		Verifier:          provider.Verifier(&oidc.Config{ClientID: params.ClientID}),
