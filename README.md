@@ -11,14 +11,10 @@
 
 Crooner is a golang library for authenticating with an Azure app registration
 
-![image](https://github.com/catgoose/crooner/blob/41cd66a9a377448bb5fe7fdae11ec944de53835f/crooner.png)
+![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
 
 Ever want to authenticate with Azure in your Go project but MSAL has no
 examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/468>
-
-![image](https://github.com/catgoose/crooner/blob/41cd66a9a377448bb5fe7fdae11ec944de53835f/be_here.png)
-
-![image](https://github.com/catgoose/crooner/blob/4be4936dedb862dfe0754cb61f26795ca97b3c7d/it_sucks.png)
 
 ## About
 
@@ -85,9 +81,7 @@ func main() {
 }
 ```
 
-In Azure app registration remember to enable `ID tokens` to be issued
-
-![image](https://github.com/catgoose/crooner/blob/4be4936dedb862dfe0754cb61f26795ca97b3c7d/sloppy.png)
+Note: Remember in Azure app registration to enable `ID tokens` to be issued
 
 ## Todo
 
