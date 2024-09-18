@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/coreos/go-oidc"
+	"github.com/gorilla/sessions"
+	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/exp/rand"
 	"golang.org/x/oauth2"
@@ -22,7 +24,6 @@ type AuthConfig struct {
 	TenantID          string                // Azure AD Tenant ID
 	LogoutURLRedirect string                // URL to redirect after logout
 	LoginURLRedirect  string                // URL to redirect after login
-	SessionSecret     string                // Session secret for cookie store
 }
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
@@ -33,8 +34,8 @@ type AuthConfigParams struct {
 	RedirectURL       string      // URL to redirect after login
 	LogoutURLRedirect string      // URL to redirect after logout
 	LoginURLRedirect  string      // URL to redirect after login
-	SessionSecret     string      // Session secret for cookie store
 	AuthRoutes        *AuthRoutes // Routes for authentication
+	SessionSecret     string      // Session secret for crooner cookie store
 	AdditionalScopes  []string    // Additional scopes to request during authentication
 }
 
@@ -75,8 +76,12 @@ func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) 
 		TenantID:          params.TenantID,
 		LogoutURLRedirect: params.LogoutURLRedirect,
 		LoginURLRedirect:  params.LoginURLRedirect,
-		SessionSecret:     params.SessionSecret,
 		AuthRoutes:        params.AuthRoutes,
+	}
+
+	if params.SessionSecret != "" {
+		store := sessions.NewCookieStore([]byte(params.SessionSecret))
+		e.Use(session.Middleware(store))
 	}
 
 	authHandlerConfig := &AuthHandlerConfig{
@@ -99,9 +104,6 @@ func validateAuthParams(params *AuthConfigParams) error {
 	}
 	if params.RedirectURL == "" {
 		return fmt.Errorf("missing required parameter: RedirectURL")
-	}
-	if params.SessionSecret == "" {
-		return fmt.Errorf("missing required parameter: SessionSecret")
 	}
 	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
 		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")

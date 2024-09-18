@@ -55,7 +55,6 @@ func getAzureConfig() *crooner.AuthConfigParams {
   RedirectURL:       os.Getenv("AZURE_REDIRECT_URL"),
   LogoutURLRedirect: os.Getenv("AZURE_LOGOUT_REDIRECT_URL"),
   LoginURLRedirect:  os.Getenv("AZURE_LOGIN_REDIRECT_URL"),
-  SessionSecret:     os.Getenv("SESSION_SECRET"),
   AuthRoutes: &crooner.AuthRoutes{
    Login:    "/login",
    Logout:   "/logout",
@@ -71,6 +70,10 @@ func main() {
 
  e.Use(middleware.Logger())
  e.Use(middleware.Recover())
+
+ secret := os.Getenv("SESSION_SECRET")
+ store := sessions.NewCookieStore([]byte(secret))
+ e.Use(session.Middleware(store))
 
  // Initialize Crooner authentication
  params := getAzureConfig()

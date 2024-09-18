@@ -36,9 +36,6 @@ func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFun
 
 // SetupAuth initializes the authentication middleware and routes
 func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
-	store := sessions.NewCookieStore([]byte(a.AuthConfig.SessionSecret))
-
-	e.Use(session.Middleware(store))
 	e.Use(a.authMiddleware(*a.AuthConfig.AuthRoutes))
 
 	routes := a.AuthConfig.AuthRoutes
@@ -146,7 +143,7 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes AuthRoutes)
 
 // Session helper methods
 func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
-	return session.Get("session-name", c)
+	return session.Get("crooner-auth", c)
 }
 
 func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value interface{}) error {
