@@ -77,7 +77,8 @@ func main() {
 
  // Initialize Crooner authentication
  params := getAzureConfig()
- err := crooner.NewAuthConfig(e, context.Background(), params)
+ ctx := context.Background()
+ err := crooner.NewAuthConfig(ctx, e, params)
  if err != nil {
   log.Fatalf("Failed to initialize Crooner: %v", err)
  }

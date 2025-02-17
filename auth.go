@@ -48,7 +48,7 @@ type AuthRoutes struct {
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
-func NewAuthConfig(e *echo.Echo, ctx context.Context, params *AuthConfigParams) error {
+func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) error {
 	// Validate parameters
 	if err := validateAuthParams(params); err != nil {
 		return err
