@@ -7,13 +7,13 @@ import (
 	"strings"
 
 	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
 
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
-	AuthConfig *AuthConfig
+	AuthConfig   *AuthConfig
+	SessionStore sessions.Store
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
@@ -130,13 +130,17 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes *AuthRoutes
 
 // Session helper methods
 func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
-	return session.Get("crooner-auth", c)
+	sess, err := a.SessionStore.Get(c.Request(), "crooner-auth")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	return sess, nil
 }
 
 func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value interface{}) error {
 	sess, err := a.getSession(c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 	sess.Values[key] = value
 	return sess.Save(c.Request(), c.Response())
@@ -145,7 +149,7 @@ func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value i
 func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
 	sess, err := a.getSession(c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 	delete(sess.Values, "user")
 	return sess.Save(c.Request(), c.Response())
@@ -153,7 +157,8 @@ func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
 
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
 	if err != nil {
-		fmt.Println("Error:", err)
+		c.Logger().Errorf("Auth error: %s - %v", message, err)
+		message = fmt.Sprintf("%s: %s", message, err.Error())
 	}
 	return c.String(status, message)
 }
