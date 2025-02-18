@@ -71,16 +71,29 @@ func main() {
  e.Use(middleware.Logger())
  e.Use(middleware.Recover())
 
- secret := os.Getenv("SESSION_SECRET")
- store := sessions.NewCookieStore([]byte(secret))
- e.Use(session.Middleware(store))
-
  // Initialize Crooner authentication
  params := getAzureConfig()
+
+ secret := os.Getenv("SESSION_SECRET")
+ store := sessions.NewCookieStore([]byte(secret))
+ // CroonerConfig.SessionStore must be set
+ params.CroonerConfig.SessionStore = store
+ e.Use(session.Middleware(store))
+
  ctx := context.Background()
  err := crooner.NewAuthConfig(ctx, e, params)
  if err != nil {
   log.Fatalf("Failed to initialize Crooner: %v", err)
+ }
+
+ // Read azureId from session
+ sess, err := session.Get("crooner-auth", c)
+ if err != nil {
+     return HandleError(c, http.StatusInternalServerError, "failed to retrieve session", err)
+ }
+ azureId, ok := sess.Values["azureId"].(string)
+ if !ok || azureId == "" {
+     return HandleError(c, http.StatusUnauthorized, "user not authenticated", nil)
  }
 }
 ```
@@ -89,4 +102,5 @@ Note: Remember in Azure app registration to enable `ID tokens` to be issued
 
 ## Todo
 
-- [ ] Create session methods for retrieving user profile
+- [ ] Create interface for saving session value to allow for other stores to
+      store more information other than `azureId`

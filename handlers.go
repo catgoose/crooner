@@ -88,7 +88,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
-		if err := a.saveSessionValue(c, "user", claims["email"]); err != nil {
+		if err := a.saveSessionValue(c, "azureId", claims["aud"]); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
