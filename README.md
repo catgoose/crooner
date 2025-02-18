@@ -59,10 +59,17 @@ func getAzureConfig() *crooner.AuthConfigParams {
    Login:    "/login",
    Logout:   "/logout",
    Callback: "/callback",
-   AuthExempt: []string{"/profile", "/about"} // optional, routes exempt from auth middleware
+   // optional, routes exempt from auth middleware
+   AuthExempt: []string{"/profile", "/about"}
   },
-  AdditionalScopes: []string{"User"}, // optional, additional scopes to request
- }
+  // optional, additional scopes to request
+  AdditionalScopes: []string{"User"},
+ },
+ // Map of session values to claims to store in session.
+ // Use c.get("value") to retrieve claim
+ SessionValueClaims: []map[string]string{
+  {"azureId": "oid"},
+ },
 }
 
 func main() {

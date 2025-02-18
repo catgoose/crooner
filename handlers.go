@@ -12,8 +12,9 @@ import (
 
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
-	AuthConfig   *AuthConfig
-	SessionStore sessions.Store
+	AuthConfig         *AuthConfig
+	SessionStore       sessions.Store
+	SessionValueClaims []map[string]string
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
@@ -88,8 +89,19 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
-		if err := a.saveSessionValue(c, "azureId", claims["aud"]); err != nil {
+		if err := a.saveSessionValue(c, "user", claims["email"]); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		}
+		if a.SessionValueClaims != nil {
+			for _, valueMap := range a.SessionValueClaims {
+				for key, claim := range valueMap {
+					if val, ok := claims[claim]; ok {
+						if err := a.saveSessionValue(c, key, val); err != nil {
+							return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+						}
+					}
+				}
+			}
 		}
 		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
 	}

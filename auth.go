@@ -25,15 +25,16 @@ type AuthConfig struct {
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
 type AuthConfigParams struct {
-	ClientID          string         // Azure AD Client ID
-	ClientSecret      string         // Azure AD Client Secret
-	TenantID          string         // Azure AD Tenant ID
-	RedirectURL       string         // URL to redirect after login
-	LogoutURLRedirect string         // URL to redirect after logout
-	LoginURLRedirect  string         // URL to redirect after login
-	AuthRoutes        *AuthRoutes    // Routes for authentication
-	SessionStore      sessions.Store // Session store
-	AdditionalScopes  []string       // Additional scopes to request during authentication
+	ClientID           string              // Azure AD Client ID
+	ClientSecret       string              // Azure AD Client Secret
+	TenantID           string              // Azure AD Tenant ID
+	RedirectURL        string              // URL to redirect after login
+	LogoutURLRedirect  string              // URL to redirect after logout
+	LoginURLRedirect   string              // URL to redirect after login
+	AuthRoutes         *AuthRoutes         // Routes for authentication
+	SessionStore       sessions.Store      // Session store
+	AdditionalScopes   []string            // Additional scopes to request during authentication
+	SessionValueClaims []map[string]string // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
 }
 
 // AuthRoutes contains the routes for authentication
@@ -81,8 +82,9 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 	}
 
 	authHandlerConfig := &AuthHandlerConfig{
-		AuthConfig:   authConfig,
-		SessionStore: params.SessionStore,
+		AuthConfig:         authConfig,
+		SessionStore:       params.SessionStore,
+		SessionValueClaims: params.SessionValueClaims,
 	}
 	authHandlerConfig.SetupAuth(e)
 	return nil
