@@ -62,6 +62,15 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	}
 }
 
+// func printPrettyClaims(claims map[string]interface{}) {
+// 	prettyJSON, err := json.MarshalIndent(claims, "", "  ")
+// 	if err != nil {
+// 		fmt.Println("Failed to marshal claims:", err)
+// 		return
+// 	}
+// 	fmt.Printf("\n\nClaims:\n%s\n\n", prettyJSON)
+// }
+
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -96,6 +105,15 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 			for _, valueMap := range a.SessionValueClaims {
 				for key, claim := range valueMap {
 					if val, ok := claims[claim]; ok {
+						if slice, isSlice := val.([]interface{}); isSlice {
+							var sliceStrings []string
+							for _, role := range slice {
+								if strRole, isString := role.(string); isString {
+									sliceStrings = append(sliceStrings, strRole)
+								}
+							}
+							val = sliceStrings
+						}
 						if err := a.saveSessionValue(c, key, val); err != nil {
 							return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 						}
