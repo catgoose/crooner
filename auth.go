@@ -2,15 +2,12 @@ package crooner
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 
 	"github.com/coreos/go-oidc"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
-	"golang.org/x/exp/rand"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
 )
@@ -109,21 +106,6 @@ func validateAuthParams(params *AuthConfigParams) error {
 		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
 	}
 	return nil
-}
-
-// GenerateCodeVerifier generates a random PKCE code verifier
-func GenerateCodeVerifier() (string, error) {
-	verifier := make([]byte, 64)
-	if _, err := rand.Read(verifier); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(verifier), nil
-}
-
-// GenerateCodeChallenge generates a SHA256 code challenge from the verifier
-func GenerateCodeChallenge(verifier string) string {
-	hash := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
 // GetLoginURL constructs and returns the Azure AD login URL
