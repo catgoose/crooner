@@ -7,17 +7,17 @@ import (
 	"strings"
 
 	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 )
 
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
-	AuthConfig *AuthConfig
+	AuthConfig   *AuthConfig
+	SessionStore sessions.Store
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
-func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFunc {
+func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if a.isAuthExemptRoute(c, routes) {
@@ -36,7 +36,7 @@ func (a *AuthHandlerConfig) authMiddleware(routes AuthRoutes) echo.MiddlewareFun
 
 // SetupAuth initializes the authentication middleware and routes
 func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
-	e.Use(a.authMiddleware(*a.AuthConfig.AuthRoutes))
+	e.Use(a.authMiddleware(a.AuthConfig.AuthRoutes))
 
 	routes := a.AuthConfig.AuthRoutes
 	e.GET(routes.Login, a.loginHandler())
@@ -51,14 +51,11 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to generate code verifier", err)
 		}
-
 		codeChallenge := GenerateCodeChallenge(codeVerifier)
-
 		// Save code verifier in session
 		if err := a.saveSessionValue(c, "code_verifier", codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-
 		loginURL := a.AuthConfig.GetLoginURL("state", codeChallenge)
 		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
@@ -71,36 +68,29 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
-
 		codeVerifier, ok := sess.Values["code_verifier"].(string)
 		if !ok {
 			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
 		}
-
 		code := c.QueryParam("code")
 		if code == "" {
 			return a.handleError(c, http.StatusBadRequest, "Authorization code not provided", nil)
 		}
-
 		token, err := a.AuthConfig.ExchangeToken(c.Request().Context(), code, codeVerifier)
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
 		}
-
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
 			return a.handleError(c, http.StatusInternalServerError, "ID token not found in token response", nil)
 		}
-
 		claims, err := a.AuthConfig.VerifyIDToken(c.Request().Context(), idToken)
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
-
-		if err := a.saveSessionValue(c, "user", claims["email"]); err != nil {
+		if err := a.saveSessionValue(c, "azureId", claims["aud"]); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-
 		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
 	}
 }
@@ -111,23 +101,20 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 		if err := a.clearSession(c); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear session", err)
 		}
-
 		if !a.isAbsoluteURL(a.AuthConfig.LogoutURLRedirect) {
 			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", nil)
 		}
-
 		logoutURL := fmt.Sprintf(
 			"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
 			a.AuthConfig.TenantID,
 			url.QueryEscape(a.AuthConfig.LogoutURLRedirect),
 		)
-
 		return c.Redirect(http.StatusFound, logoutURL)
 	}
 }
 
 // isAuthExemptRoute checks if the current route is exempt from authentication
-func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes AuthRoutes) bool {
+func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes *AuthRoutes) bool {
 	if strings.HasPrefix(c.Path(), routes.Login) ||
 		strings.HasPrefix(c.Path(), routes.Callback) ||
 		strings.HasPrefix(c.Path(), routes.Logout) {
@@ -143,13 +130,17 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes AuthRoutes)
 
 // Session helper methods
 func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
-	return session.Get("crooner-auth", c)
+	sess, err := a.SessionStore.Get(c.Request(), "crooner-auth")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session: %w", err)
+	}
+	return sess, nil
 }
 
 func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value interface{}) error {
 	sess, err := a.getSession(c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 	sess.Values[key] = value
 	return sess.Save(c.Request(), c.Response())
@@ -158,7 +149,7 @@ func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value i
 func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
 	sess, err := a.getSession(c)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get session: %w", err)
 	}
 	delete(sess.Values, "user")
 	return sess.Save(c.Request(), c.Response())
@@ -166,7 +157,8 @@ func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
 
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
 	if err != nil {
-		fmt.Println("Error:", err)
+		c.Logger().Errorf("Auth error: %s - %v", message, err)
+		message = fmt.Sprintf("%s: %s", message, err.Error())
 	}
 	return c.String(status, message)
 }

@@ -2,15 +2,12 @@ package crooner
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 
 	"github.com/coreos/go-oidc"
 	"github.com/gorilla/sessions"
 	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
-	"golang.org/x/exp/rand"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
 )
@@ -28,15 +25,15 @@ type AuthConfig struct {
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
 type AuthConfigParams struct {
-	ClientID          string      // Azure AD Client ID
-	ClientSecret      string      // Azure AD Client Secret
-	TenantID          string      // Azure AD Tenant ID
-	RedirectURL       string      // URL to redirect after login
-	LogoutURLRedirect string      // URL to redirect after logout
-	LoginURLRedirect  string      // URL to redirect after login
-	AuthRoutes        *AuthRoutes // Routes for authentication
-	SessionSecret     string      // Session secret for crooner cookie store
-	AdditionalScopes  []string    // Additional scopes to request during authentication
+	ClientID          string         // Azure AD Client ID
+	ClientSecret      string         // Azure AD Client Secret
+	TenantID          string         // Azure AD Tenant ID
+	RedirectURL       string         // URL to redirect after login
+	LogoutURLRedirect string         // URL to redirect after logout
+	LoginURLRedirect  string         // URL to redirect after login
+	AuthRoutes        *AuthRoutes    // Routes for authentication
+	SessionStore      sessions.Store // Session store
+	AdditionalScopes  []string       // Additional scopes to request during authentication
 }
 
 // AuthRoutes contains the routes for authentication
@@ -79,13 +76,13 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		AuthRoutes:        params.AuthRoutes,
 	}
 
-	if params.SessionSecret != "" {
-		store := sessions.NewCookieStore([]byte(params.SessionSecret))
-		e.Use(session.Middleware(store))
+	if params.SessionStore != nil {
+		e.Use(session.Middleware(params.SessionStore))
 	}
 
 	authHandlerConfig := &AuthHandlerConfig{
-		AuthConfig: authConfig,
+		AuthConfig:   authConfig,
+		SessionStore: params.SessionStore,
 	}
 	authHandlerConfig.SetupAuth(e)
 	return nil
@@ -108,22 +105,10 @@ func validateAuthParams(params *AuthConfigParams) error {
 	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
 		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
 	}
-	return nil
-}
-
-// GenerateCodeVerifier generates a random PKCE code verifier
-func GenerateCodeVerifier() (string, error) {
-	verifier := make([]byte, 64)
-	if _, err := rand.Read(verifier); err != nil {
-		return "", err
+	if params.SessionStore == nil {
+		return fmt.Errorf("missing required parameter: SessionStore")
 	}
-	return base64.RawURLEncoding.EncodeToString(verifier), nil
-}
-
-// GenerateCodeChallenge generates a SHA256 code challenge from the verifier
-func GenerateCodeChallenge(verifier string) string {
-	hash := sha256.Sum256([]byte(verifier))
-	return base64.RawURLEncoding.EncodeToString(hash[:])
+	return nil
 }
 
 // GetLoginURL constructs and returns the Azure AD login URL
