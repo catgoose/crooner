@@ -21,6 +21,7 @@ type AuthConfig struct {
 	TenantID          string                // Azure AD Tenant ID
 	LogoutURLRedirect string                // URL to redirect after logout
 	LoginURLRedirect  string                // URL to redirect after login
+	CookieName        string                // Key for the session cookie
 }
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
@@ -35,6 +36,7 @@ type AuthConfigParams struct {
 	SessionStore       sessions.Store      // Session store
 	AdditionalScopes   []string            // Additional scopes to request during authentication
 	SessionValueClaims []map[string]string // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
+	CookieName         string              // Key for the session cookie
 }
 
 // AuthRoutes contains the routes for authentication
@@ -61,6 +63,10 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 	scopes = append(scopes, params.AdditionalScopes...)
 
+	if params.CookieName == "" {
+		params.CookieName = "crooner-auth"
+	}
+
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
 			ClientID:     params.ClientID,
@@ -75,6 +81,7 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		LogoutURLRedirect: params.LogoutURLRedirect,
 		LoginURLRedirect:  params.LoginURLRedirect,
 		AuthRoutes:        params.AuthRoutes,
+		CookieName:        params.CookieName,
 	}
 
 	if params.SessionStore != nil {
@@ -128,13 +135,13 @@ func (c *AuthConfig) ExchangeToken(ctx context.Context, code, codeVerifier strin
 }
 
 // VerifyIDToken verifies the provided ID token using the OIDC provider
-func (c *AuthConfig) VerifyIDToken(ctx context.Context, idToken string) (map[string]interface{}, error) {
+func (c *AuthConfig) VerifyIDToken(ctx context.Context, idToken string) (map[string]any, error) {
 	idTokenObj, err := c.Verifier.Verify(ctx, idToken)
 	if err != nil {
 		return nil, fmt.Errorf("failed to verify ID token: %w", err)
 	}
 
-	var claims map[string]interface{}
+	var claims map[string]any
 	if err := idTokenObj.Claims(&claims); err != nil {
 		return nil, fmt.Errorf("failed to parse ID token claims: %w", err)
 	}

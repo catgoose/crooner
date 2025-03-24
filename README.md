@@ -64,6 +64,7 @@ func getAzureConfig() *crooner.AuthConfigParams {
   },
   // optional, additional scopes to request
   AdditionalScopes: []string{"User"},
+  CookieName: "crooner-auth-key" // defaults to "crooner-auth"
  },
  // Map of session values to claims to store in session.
  // Use c.get("value") to retrieve claim
@@ -94,7 +95,7 @@ func main() {
  }
 
  // Read azureId from session
- sess, err := session.Get("crooner-auth", c)
+ sess, err := session.Get("crooner-auth-key", c)
  if err != nil {
      return HandleError(c, http.StatusInternalServerError, "failed to retrieve session", err)
  }

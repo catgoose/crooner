@@ -62,15 +62,6 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	}
 }
 
-// func printPrettyClaims(claims map[string]interface{}) {
-// 	prettyJSON, err := json.MarshalIndent(claims, "", "  ")
-// 	if err != nil {
-// 		fmt.Println("Failed to marshal claims:", err)
-// 		return
-// 	}
-// 	fmt.Printf("\n\nClaims:\n%s\n\n", prettyJSON)
-// }
-
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -105,7 +96,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 			for _, valueMap := range a.SessionValueClaims {
 				for key, claim := range valueMap {
 					if val, ok := claims[claim]; ok {
-						if slice, isSlice := val.([]interface{}); isSlice {
+						if slice, isSlice := val.([]any); isSlice {
 							var sliceStrings []string
 							for _, role := range slice {
 								if strRole, isString := role.(string); isString {
@@ -160,14 +151,14 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes *AuthRoutes
 
 // Session helper methods
 func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
-	sess, err := a.SessionStore.Get(c.Request(), "crooner-auth")
+	sess, err := a.SessionStore.Get(c.Request(), a.AuthConfig.CookieName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get session: %w", err)
 	}
 	return sess, nil
 }
 
-func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value interface{}) error {
+func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value any) error {
 	sess, err := a.getSession(c)
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
