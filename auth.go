@@ -15,7 +15,7 @@ import (
 
 // SessionSecurityConfig contains session security configuration
 type SessionSecurityConfig struct {
-	HttpOnly bool
+	HTTPOnly bool
 	Secure   bool
 	SameSite http.SameSite
 	MaxAge   int
@@ -251,7 +251,7 @@ func validateURL(urlStr string) error {
 // getDefaultSessionSecurity returns secure default session configuration
 func getDefaultSessionSecurity() *SessionSecurityConfig {
 	return &SessionSecurityConfig{
-		HttpOnly: true,
+		HTTPOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   3600, // 1 hour
