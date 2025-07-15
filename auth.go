@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc"
-	"github.com/gorilla/sessions"
-	"github.com/labstack/echo-contrib/session"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
@@ -78,7 +76,6 @@ type AuthConfigParams struct {
 	LogoutURLRedirect  string                 // URL to redirect after logout
 	LoginURLRedirect   string                 // URL to redirect after login
 	AuthRoutes         *AuthRoutes            // Routes for authentication
-	SessionStore       sessions.Store         // Session store
 	AdditionalScopes   []string               // Additional scopes to request during authentication
 	SessionValueClaims []map[string]string    // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
 	CookieName         string                 // Key for the session cookie
@@ -86,6 +83,7 @@ type AuthConfigParams struct {
 	URLValidation      *URLValidationConfig   // URL validation configuration
 	ErrorConfig        *ErrorConfig           // Error handling configuration
 	SecurityHeaders    *SecurityHeadersConfig // Security headers configuration
+	SessionMgr         SessionManager         // Pluggable session manager (SCS, etc.)
 }
 
 // AuthRoutes contains the routes for authentication
@@ -98,7 +96,7 @@ type AuthRoutes struct {
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters
 func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) error {
-	// Validate parameters
+	// Validate parameters (remove SessionStore check)
 	if err := validateAuthParams(params); err != nil {
 		return err
 	}
@@ -149,14 +147,10 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		SecurityHeaders:   params.SecurityHeaders,
 	}
 
-	if params.SessionStore != nil {
-		e.Use(session.Middleware(params.SessionStore))
-	}
-
 	authHandlerConfig := &AuthHandlerConfig{
 		AuthConfig:         authConfig,
-		SessionStore:       params.SessionStore,
 		SessionValueClaims: params.SessionValueClaims,
+		SessionMgr:         params.SessionMgr,
 	}
 	authHandlerConfig.SetupAuth(e)
 	return nil
@@ -179,9 +173,7 @@ func validateAuthParams(params *AuthConfigParams) error {
 	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
 		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
 	}
-	if params.SessionStore == nil {
-		return fmt.Errorf("missing required parameter: SessionStore")
-	}
+	// No SessionStore check
 
 	// Validate TenantID format (UUID)
 	if !isValidUUID(params.TenantID) {

@@ -6,6 +6,10 @@
   - [About](#about)
   - [Installation](#installation)
   - [Usage](#usage)
+  - [Configurable Content Security Policy (CSP)](#configurable-content-security-policy-csp)
+    - [Usage](#usage)
+    - [Why make CSP configurable?](#why-make-csp-configurable)
+  - [Using Crooner with SCS (alexedwards/scs/v2)](#using-crooner-with-scs-alexedwardsscsv2)
   - [Todo](#todo)
   <!--toc:end-->
 
@@ -134,10 +138,66 @@ params := &crooner.AuthConfigParams{
 ```
 
 ### Why make CSP configurable?
+
 - **Strict CSP** (`default-src 'self'`): Best for security, but blocks inline scripts/styles and data URLs. Use this in production if possible.
 - **Relaxed CSP** (e.g., allowing `'unsafe-inline'` or `data:`): Needed if your frontend or libraries (like htmx) require inline scripts/styles or data images.
 
 **Note:** Adjust your CSP according to your application's security and functionality requirements.
+
+## Using Crooner with SCS (alexedwards/scs/v2)
+
+Crooner supports pluggable session backends via the `SessionManager` interface. To use SCS for session management:
+
+1. Install SCS:
+
+```bash
+go get github.com/alexedwards/scs/v2
+```
+
+1. Set up SCS in your app and pass it to Crooner:
+
+```go
+import (
+ "github.com/alexedwards/scs/v2"
+ crooner "github.com/catgoose/crooner"
+ "github.com/labstack/echo/v4"
+)
+
+func main() {
+ e := echo.New()
+ // ... other middleware ...
+
+ // Set up SCS session manager
+ scsMgr := scs.New()
+ scsMgr.Cookie.Name = "crooner-auth-sitename"
+ scsMgr.Cookie.HttpOnly = true
+ scsMgr.Cookie.Secure = true
+ scsMgr.Cookie.SameSite = http.SameSiteLaxMode
+ scsMgr.Cookie.Persist = true
+ scsMgr.Lifetime = 24 * time.Hour
+ e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
+
+ // Set up Crooner config
+ params := &crooner.AuthConfigParams{
+  // ... other config ...
+  SessionMgr: &crooner.SCSManager{Session: scsMgr},
+ }
+
+ // Initialize Crooner authentication
+ ctx := context.Background()
+ err := crooner.NewAuthConfig(ctx, e, params)
+ if err != nil {
+  log.Fatalf("Failed to initialize Crooner: %v", err)
+ }
+
+ // ... your routes ...
+}
+```
+
+**Note:**
+
+- All session operations will use SCS via the `SessionManager` interface.
+- You can implement your own session backend by implementing the `SessionManager` interface if needed.
 
 ## Todo
 

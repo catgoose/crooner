@@ -6,15 +6,16 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/gorilla/sessions"
+	"slices"
+
 	"github.com/labstack/echo/v4"
 )
 
 // AuthHandlerConfig defines the configuration for handlers
 type AuthHandlerConfig struct {
 	AuthConfig         *AuthConfig
-	SessionStore       sessions.Store
 	SessionValueClaims []map[string]string
+	SessionMgr         SessionManager // Use interface for all session operations
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
@@ -26,7 +27,7 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 			}
 
 			// Retrieve and validate session
-			if sess, err := a.getSession(c); err != nil || sess.Values["user"] == nil {
+			if user, err := a.SessionMgr.Get(c, "user"); err != nil || user == nil {
 				return c.Redirect(http.StatusFound, routes.Login)
 			}
 
@@ -57,7 +58,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		}
 
 		// Store state in session
-		if err := a.saveSessionValue(c, "oauth_state", state); err != nil {
+		if err := a.SessionMgr.Set(c, "oauth_state", state); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 
@@ -67,7 +68,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		}
 		codeChallenge := GenerateCodeChallenge(codeVerifier)
 		// Save code verifier in session
-		if err := a.saveSessionValue(c, "code_verifier", codeVerifier); err != nil {
+		if err := a.SessionMgr.Set(c, "code_verifier", codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		loginURL := a.AuthConfig.GetLoginURL(state, codeChallenge)
@@ -78,13 +79,13 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		sess, err := a.getSession(c)
+		sess, err := a.SessionMgr.Get(c, "oauth_state")
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
 
 		// Validate state parameter
-		expectedState, ok := sess.Values["oauth_state"].(string)
+		expectedState, ok := sess.(string)
 		if !ok {
 			return a.handleError(c, http.StatusBadRequest, "State not found in session", nil)
 		}
@@ -95,9 +96,15 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		}
 
 		// Clear state from session
-		delete(sess.Values, "oauth_state")
+		if err := a.SessionMgr.Delete(c, "oauth_state"); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear state from session", err)
+		}
 
-		codeVerifier, ok := sess.Values["code_verifier"].(string)
+		sess, err = a.SessionMgr.Get(c, "code_verifier")
+		if err != nil {
+			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
+		}
+		codeVerifier, ok := sess.(string)
 		if !ok {
 			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
 		}
@@ -117,7 +124,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
-		if err := a.saveSessionValue(c, "user", claims["email"]); err != nil {
+		if err := a.SessionMgr.Set(c, "user", claims["email"]); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		if a.SessionValueClaims != nil {
@@ -133,7 +140,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 							}
 							val = sliceStrings
 						}
-						if err := a.saveSessionValue(c, key, val); err != nil {
+						if err := a.SessionMgr.Set(c, key, val); err != nil {
 							return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 						}
 					}
@@ -147,7 +154,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 // logoutHandler creates a handler function for the logout route
 func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if err := a.clearSession(c); err != nil {
+		if err := a.SessionMgr.Clear(c); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear session", err)
 		}
 
@@ -181,53 +188,6 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes *AuthRoutes
 }
 
 // Session helper methods
-func (a *AuthHandlerConfig) getSession(c echo.Context) (*sessions.Session, error) {
-	sess, err := a.SessionStore.Get(c.Request(), a.AuthConfig.CookieName)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get session: %w", err)
-	}
-	return sess, nil
-}
-
-func (a *AuthHandlerConfig) saveSessionValue(c echo.Context, key string, value any) error {
-	sess, err := a.getSession(c)
-	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-	sess.Values[key] = value
-	return sess.Save(c.Request(), c.Response())
-}
-
-func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
-	sess, err := a.getSession(c)
-	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-	// Clear all session values
-	for key := range sess.Values {
-		delete(sess.Values, key)
-	}
-	return sess.Save(c.Request(), c.Response())
-}
-
-// invalidateSession completely invalidates the session
-func (a *AuthHandlerConfig) invalidateSession(c echo.Context) error {
-	sess, err := a.getSession(c)
-	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
-	}
-
-	// Clear all session values
-	for key := range sess.Values {
-		delete(sess.Values, key)
-	}
-
-	// Set session to expire immediately
-	sess.Options.MaxAge = -1
-
-	return sess.Save(c.Request(), c.Response())
-}
-
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
 	// Always log detailed errors internally
 	if err != nil {
@@ -247,11 +207,6 @@ func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message stri
 	return c.String(status, userMessage)
 }
 
-func (a *AuthHandlerConfig) isAbsoluteURL(rawURL string) bool {
-	parsedURL, err := url.Parse(rawURL)
-	return err == nil && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
-}
-
 // validateRedirectURL validates redirect URLs with security checks
 func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
 	parsedURL, err := url.Parse(rawURL)
@@ -268,14 +223,7 @@ func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
 
 	// Validate scheme
 	if a.AuthConfig.URLValidation != nil && len(a.AuthConfig.URLValidation.AllowedSchemes) > 0 {
-		schemeAllowed := false
-		for _, scheme := range a.AuthConfig.URLValidation.AllowedSchemes {
-			if parsedURL.Scheme == scheme {
-				schemeAllowed = true
-				break
-			}
-		}
-		if !schemeAllowed {
+		if !slices.Contains(a.AuthConfig.URLValidation.AllowedSchemes, parsedURL.Scheme) {
 			return fmt.Errorf("scheme %s not allowed", parsedURL.Scheme)
 		}
 	}
@@ -301,19 +249,7 @@ func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
 func (a *AuthHandlerConfig) secureSessionMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			// Configure secure session options
-			if a.AuthConfig.SessionSecurity != nil {
-				if store, ok := a.SessionStore.(*sessions.CookieStore); ok {
-					store.Options = &sessions.Options{
-						HttpOnly: a.AuthConfig.SessionSecurity.HttpOnly,
-						Secure:   a.AuthConfig.SessionSecurity.Secure,
-						SameSite: a.AuthConfig.SessionSecurity.SameSite,
-						MaxAge:   a.AuthConfig.SessionSecurity.MaxAge,
-						Domain:   a.AuthConfig.SessionSecurity.Domain,
-						Path:     a.AuthConfig.SessionSecurity.Path,
-					}
-				}
-			}
+			// Session options should be set in the app, not here
 			return next(c)
 		}
 	}
