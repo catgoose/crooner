@@ -108,6 +108,37 @@ func main() {
 
 Note: Remember in Azure app registration to enable `ID tokens` to be issued
 
+## Configurable Content Security Policy (CSP)
+
+Crooner now supports configurable Content Security Policy (CSP) headers via the `SecurityHeadersConfig` struct. This allows you to control how strict or permissive your CSP is, depending on your application's needs.
+
+### Usage
+
+When initializing your authentication configuration, you can set the CSP like this:
+
+```go
+import (
+    // ...
+    "github.com/labstack/echo/v4"
+)
+
+params := &crooner.AuthConfigParams{
+    // ... other config ...
+    SecurityHeaders: &crooner.SecurityHeadersConfig{
+        // Example: allow inline scripts/styles and data URLs for images
+        ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+    },
+}
+
+// If not set, the default is strict: "default-src 'self'"
+```
+
+### Why make CSP configurable?
+- **Strict CSP** (`default-src 'self'`): Best for security, but blocks inline scripts/styles and data URLs. Use this in production if possible.
+- **Relaxed CSP** (e.g., allowing `'unsafe-inline'` or `data:`): Needed if your frontend or libraries (like htmx) require inline scripts/styles or data images.
+
+**Note:** Adjust your CSP according to your application's security and functionality requirements.
+
 ## Todo
 
 - [ ] Create interface for saving session value to allow for other stores to

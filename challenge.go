@@ -21,3 +21,12 @@ func GenerateCodeVerifier() (string, error) {
 	}
 	return base64.RawURLEncoding.EncodeToString(verifier), nil
 }
+
+// GenerateState generates a cryptographically secure random state parameter for OAuth2
+func GenerateState() (string, error) {
+	state := make([]byte, 32)
+	if _, err := rand.Read(state); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(state), nil
+}

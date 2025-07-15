@@ -3,6 +3,9 @@ package crooner
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/coreos/go-oidc"
 	"github.com/gorilla/sessions"
@@ -12,31 +15,77 @@ import (
 	"golang.org/x/oauth2/microsoft"
 )
 
+// SessionSecurityConfig contains session security configuration
+type SessionSecurityConfig struct {
+	HttpOnly bool
+	Secure   bool
+	SameSite http.SameSite
+	MaxAge   int
+	Domain   string
+	Path     string
+}
+
+// URLValidationConfig contains URL validation configuration
+type URLValidationConfig struct {
+	AllowedSchemes []string
+	AllowedDomains []string
+	RequireHTTPS   bool
+}
+
+// ErrorConfig contains error handling configuration
+type ErrorConfig struct {
+	ShowDetails bool
+	LogLevel    string
+}
+
+// SecurityHeadersConfig contains configuration for security headers
+type SecurityHeadersConfig struct {
+	ContentSecurityPolicy string
+}
+
+// Error constants for consistent error messages
+const (
+	ErrGenericAuth       = "Authentication error occurred"
+	ErrInvalidState      = "Invalid authentication state"
+	ErrTokenExchange     = "Token exchange failed"
+	ErrTokenVerification = "Token verification failed"
+	ErrSessionError      = "Session error occurred"
+	ErrInvalidRedirect   = "Invalid redirect URL"
+)
+
 // AuthConfig contains the configuration for Azure AD authentication
 type AuthConfig struct {
-	OAuth2Config      *oauth2.Config        // OAuth2 configuration
-	Provider          *oidc.Provider        // OIDC Provider for Azure AD
-	Verifier          *oidc.IDTokenVerifier // Verifier to verify ID tokens
-	AuthRoutes        *AuthRoutes           // Routes for authentication
-	TenantID          string                // Azure AD Tenant ID
-	LogoutURLRedirect string                // URL to redirect after logout
-	LoginURLRedirect  string                // URL to redirect after login
-	CookieName        string                // Key for the session cookie
+	OAuth2Config      *oauth2.Config         // OAuth2 configuration
+	Provider          *oidc.Provider         // OIDC Provider for Azure AD
+	Verifier          *oidc.IDTokenVerifier  // Verifier to verify ID tokens
+	AuthRoutes        *AuthRoutes            // Routes for authentication
+	TenantID          string                 // Azure AD Tenant ID
+	LogoutURLRedirect string                 // URL to redirect after logout
+	LoginURLRedirect  string                 // URL to redirect after login
+	CookieName        string                 // Key for the session cookie
+	SessionSecurity   *SessionSecurityConfig // Session security configuration
+	URLValidation     *URLValidationConfig   // URL validation configuration
+	ErrorConfig       *ErrorConfig           // Error handling configuration
+	SecurityHeaders   *SecurityHeadersConfig // Security headers configuration
 }
 
 // AuthConfigParams contains the parameters needed to configure Azure AD authentication
 type AuthConfigParams struct {
-	ClientID           string              // Azure AD Client ID
-	ClientSecret       string              // Azure AD Client Secret
-	TenantID           string              // Azure AD Tenant ID
-	RedirectURL        string              // URL to redirect after login
-	LogoutURLRedirect  string              // URL to redirect after logout
-	LoginURLRedirect   string              // URL to redirect after login
-	AuthRoutes         *AuthRoutes         // Routes for authentication
-	SessionStore       sessions.Store      // Session store
-	AdditionalScopes   []string            // Additional scopes to request during authentication
-	SessionValueClaims []map[string]string // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
-	CookieName         string              // Key for the session cookie
+	ClientID           string                 // Azure AD Client ID
+	ClientSecret       string                 // Azure AD Client Secret
+	TenantID           string                 // Azure AD Tenant ID
+	RedirectURL        string                 // URL to redirect after login
+	LogoutURLRedirect  string                 // URL to redirect after logout
+	LoginURLRedirect   string                 // URL to redirect after login
+	AuthRoutes         *AuthRoutes            // Routes for authentication
+	SessionStore       sessions.Store         // Session store
+	AdditionalScopes   []string               // Additional scopes to request during authentication
+	SessionValueClaims []map[string]string    // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
+	CookieName         string                 // Key for the session cookie
+	SessionSecurity    *SessionSecurityConfig // Session security configuration
+	URLValidation      *URLValidationConfig   // URL validation configuration
+	ErrorConfig        *ErrorConfig           // Error handling configuration
+	SecurityHeaders    *SecurityHeadersConfig // Security headers configuration
 }
 
 // AuthRoutes contains the routes for authentication
@@ -67,6 +116,18 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		params.CookieName = "crooner-auth"
 	}
 
+	// Apply default session security if not provided
+	if params.SessionSecurity == nil {
+		params.SessionSecurity = getDefaultSessionSecurity()
+	}
+
+	// Apply default security headers if not provided
+	if params.SecurityHeaders == nil {
+		params.SecurityHeaders = &SecurityHeadersConfig{
+			ContentSecurityPolicy: "default-src 'self'", // secure default
+		}
+	}
+
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
 			ClientID:     params.ClientID,
@@ -82,6 +143,10 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		LoginURLRedirect:  params.LoginURLRedirect,
 		AuthRoutes:        params.AuthRoutes,
 		CookieName:        params.CookieName,
+		SessionSecurity:   params.SessionSecurity,
+		URLValidation:     params.URLValidation,
+		ErrorConfig:       params.ErrorConfig,
+		SecurityHeaders:   params.SecurityHeaders,
 	}
 
 	if params.SessionStore != nil {
@@ -117,7 +182,89 @@ func validateAuthParams(params *AuthConfigParams) error {
 	if params.SessionStore == nil {
 		return fmt.Errorf("missing required parameter: SessionStore")
 	}
+
+	// Validate TenantID format (UUID)
+	if !isValidUUID(params.TenantID) {
+		return fmt.Errorf("invalid TenantID format: must be a valid UUID")
+	}
+
+	// Validate ClientID format (UUID)
+	if !isValidUUID(params.ClientID) {
+		return fmt.Errorf("invalid ClientID format: must be a valid UUID")
+	}
+
+	// Validate URLs
+	if err := validateURL(params.RedirectURL); err != nil {
+		return fmt.Errorf("invalid RedirectURL: %w", err)
+	}
+
+	if err := validateURL(params.LogoutURLRedirect); err != nil {
+		return fmt.Errorf("invalid LogoutURLRedirect: %w", err)
+	}
+
+	if err := validateURL(params.LoginURLRedirect); err != nil {
+		return fmt.Errorf("invalid LoginURLRedirect: %w", err)
+	}
+
 	return nil
+}
+
+// isValidUUID checks if a string is a valid UUID
+func isValidUUID(uuid string) bool {
+	if len(uuid) != 36 {
+		return false
+	}
+
+	// Simple UUID format validation (8-4-4-4-12)
+	parts := strings.Split(uuid, "-")
+	if len(parts) != 5 {
+		return false
+	}
+
+	if len(parts[0]) != 8 || len(parts[1]) != 4 || len(parts[2]) != 4 || len(parts[3]) != 4 || len(parts[4]) != 12 {
+		return false
+	}
+
+	// Check if all characters are hexadecimal
+	validChars := "0123456789abcdefABCDEF"
+	for _, part := range parts {
+		for _, char := range part {
+			if !strings.ContainsRune(validChars, char) {
+				return false
+			}
+		}
+	}
+
+	return true
+}
+
+// validateURL validates URL format
+func validateURL(urlStr string) error {
+	parsed, err := url.Parse(urlStr)
+	if err != nil {
+		return err
+	}
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("invalid URL format")
+	}
+
+	// Only allow HTTP and HTTPS schemes by default
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("scheme %s not allowed", parsed.Scheme)
+	}
+
+	return nil
+}
+
+// getDefaultSessionSecurity returns secure default session configuration
+func getDefaultSessionSecurity() *SessionSecurityConfig {
+	return &SessionSecurityConfig{
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   3600, // 1 hour
+		Path:     "/",
+	}
 }
 
 // GetLoginURL constructs and returns the Azure AD login URL

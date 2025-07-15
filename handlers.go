@@ -37,6 +37,8 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 
 // SetupAuth initializes the authentication middleware and routes
 func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
+	e.Use(a.securityHeadersMiddleware())
+	e.Use(a.secureSessionMiddleware())
 	e.Use(a.authMiddleware(a.AuthConfig.AuthRoutes))
 
 	routes := a.AuthConfig.AuthRoutes
@@ -48,6 +50,17 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 // loginHandler creates a handler function for the login route
 func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
+		// Generate secure state parameter
+		state, err := GenerateState()
+		if err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to generate state", err)
+		}
+
+		// Store state in session
+		if err := a.saveSessionValue(c, "oauth_state", state); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		}
+
 		codeVerifier, err := GenerateCodeVerifier()
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to generate code verifier", err)
@@ -57,7 +70,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if err := a.saveSessionValue(c, "code_verifier", codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-		loginURL := a.AuthConfig.GetLoginURL("state", codeChallenge)
+		loginURL := a.AuthConfig.GetLoginURL(state, codeChallenge)
 		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
 }
@@ -69,6 +82,21 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
+
+		// Validate state parameter
+		expectedState, ok := sess.Values["oauth_state"].(string)
+		if !ok {
+			return a.handleError(c, http.StatusBadRequest, "State not found in session", nil)
+		}
+
+		receivedState := c.QueryParam("state")
+		if receivedState != expectedState {
+			return a.handleError(c, http.StatusBadRequest, "Invalid state parameter", nil)
+		}
+
+		// Clear state from session
+		delete(sess.Values, "oauth_state")
+
 		codeVerifier, ok := sess.Values["code_verifier"].(string)
 		if !ok {
 			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
@@ -122,9 +150,12 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 		if err := a.clearSession(c); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear session", err)
 		}
-		if !a.isAbsoluteURL(a.AuthConfig.LogoutURLRedirect) {
-			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", nil)
+
+		// Validate redirect URL
+		if err := a.validateRedirectURL(a.AuthConfig.LogoutURLRedirect); err != nil {
+			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", err)
 		}
+
 		logoutURL := fmt.Sprintf(
 			"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
 			a.AuthConfig.TenantID,
@@ -172,19 +203,136 @@ func (a *AuthHandlerConfig) clearSession(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to get session: %w", err)
 	}
-	delete(sess.Values, "user")
+	// Clear all session values
+	for key := range sess.Values {
+		delete(sess.Values, key)
+	}
+	return sess.Save(c.Request(), c.Response())
+}
+
+// invalidateSession completely invalidates the session
+func (a *AuthHandlerConfig) invalidateSession(c echo.Context) error {
+	sess, err := a.getSession(c)
+	if err != nil {
+		return fmt.Errorf("failed to get session: %w", err)
+	}
+
+	// Clear all session values
+	for key := range sess.Values {
+		delete(sess.Values, key)
+	}
+
+	// Set session to expire immediately
+	sess.Options.MaxAge = -1
+
 	return sess.Save(c.Request(), c.Response())
 }
 
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
+	// Always log detailed errors internally
 	if err != nil {
 		c.Logger().Errorf("Auth error: %s - %v", message, err)
-		message = fmt.Sprintf("%s: %s", message, err.Error())
 	}
-	return c.String(status, message)
+
+	// Return user-friendly message
+	userMessage := ErrGenericAuth
+	if a.AuthConfig.ErrorConfig != nil && a.AuthConfig.ErrorConfig.ShowDetails {
+		if err != nil {
+			userMessage = fmt.Sprintf("%s: %s", message, err.Error())
+		} else {
+			userMessage = message
+		}
+	}
+
+	return c.String(status, userMessage)
 }
 
 func (a *AuthHandlerConfig) isAbsoluteURL(rawURL string) bool {
 	parsedURL, err := url.Parse(rawURL)
 	return err == nil && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") && parsedURL.Host != ""
+}
+
+// validateRedirectURL validates redirect URLs with security checks
+func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+
+	// Require HTTPS in production
+	if a.AuthConfig.URLValidation != nil && a.AuthConfig.URLValidation.RequireHTTPS {
+		if parsedURL.Scheme != "https" {
+			return fmt.Errorf("HTTPS required for redirect URLs")
+		}
+	}
+
+	// Validate scheme
+	if a.AuthConfig.URLValidation != nil && len(a.AuthConfig.URLValidation.AllowedSchemes) > 0 {
+		schemeAllowed := false
+		for _, scheme := range a.AuthConfig.URLValidation.AllowedSchemes {
+			if parsedURL.Scheme == scheme {
+				schemeAllowed = true
+				break
+			}
+		}
+		if !schemeAllowed {
+			return fmt.Errorf("scheme %s not allowed", parsedURL.Scheme)
+		}
+	}
+
+	// Validate domain
+	if a.AuthConfig.URLValidation != nil && len(a.AuthConfig.URLValidation.AllowedDomains) > 0 {
+		domainAllowed := false
+		for _, domain := range a.AuthConfig.URLValidation.AllowedDomains {
+			if parsedURL.Host == domain || strings.HasSuffix(parsedURL.Host, "."+domain) {
+				domainAllowed = true
+				break
+			}
+		}
+		if !domainAllowed {
+			return fmt.Errorf("domain %s not allowed", parsedURL.Host)
+		}
+	}
+
+	return nil
+}
+
+// secureSessionMiddleware configures secure session options
+func (a *AuthHandlerConfig) secureSessionMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			// Configure secure session options
+			if a.AuthConfig.SessionSecurity != nil {
+				if store, ok := a.SessionStore.(*sessions.CookieStore); ok {
+					store.Options = &sessions.Options{
+						HttpOnly: a.AuthConfig.SessionSecurity.HttpOnly,
+						Secure:   a.AuthConfig.SessionSecurity.Secure,
+						SameSite: a.AuthConfig.SessionSecurity.SameSite,
+						MaxAge:   a.AuthConfig.SessionSecurity.MaxAge,
+						Domain:   a.AuthConfig.SessionSecurity.Domain,
+						Path:     a.AuthConfig.SessionSecurity.Path,
+					}
+				}
+			}
+			return next(c)
+		}
+	}
+}
+
+// securityHeadersMiddleware adds security headers to responses
+func (a *AuthHandlerConfig) securityHeadersMiddleware() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Response().Header().Set("X-Content-Type-Options", "nosniff")
+			c.Response().Header().Set("X-Frame-Options", "DENY")
+			c.Response().Header().Set("X-XSS-Protection", "1; mode=block")
+			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			csp := "default-src 'self'"
+			if a.AuthConfig.SecurityHeaders != nil && a.AuthConfig.SecurityHeaders.ContentSecurityPolicy != "" {
+				csp = a.AuthConfig.SecurityHeaders.ContentSecurityPolicy
+			}
+			c.Response().Header().Set("Content-Security-Policy", csp)
+			return next(c)
+		}
+	}
 }
