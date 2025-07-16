@@ -32,6 +32,8 @@ type SessionManager interface {
 	Clear(c echo.Context) error
 	// Invalidate invalidates the session (expires cookie)
 	Invalidate(c echo.Context) error
+	// ClearInvalidate removes all values and invalidates the session (expires cookie)
+	ClearInvalidate(c echo.Context) error
 	// Type-safe helpers
 	GetString(c echo.Context, key string) (string, error)
 	GetInt(c echo.Context, key string) (int, error)
@@ -63,6 +65,14 @@ func (s *SCSManager) Clear(c echo.Context) error {
 
 func (s *SCSManager) Invalidate(c echo.Context) error {
 	return s.Session.Destroy(c.Request().Context())
+}
+
+// ClearInvalidate removes all values and invalidates the session (expires cookie).
+func (s *SCSManager) ClearInvalidate(c echo.Context) error {
+	if err := s.Clear(c); err != nil {
+		return err
+	}
+	return s.Invalidate(c)
 }
 
 // Standard reasons for SessionError.
