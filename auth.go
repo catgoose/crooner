@@ -68,9 +68,23 @@ type ErrorConfig struct {
 	LogLevel    string
 }
 
-// SecurityHeadersConfig contains configuration for security headers
+// SecurityHeadersConfig contains configuration for security headers.
+//
+// All fields are optional. If a field is empty, a secure default will be used.
+//
+//	ContentSecurityPolicy:    default-src 'self'
+//	XFrameOptions:            DENY
+//	XContentTypeOptions:      nosniff
+//	ReferrerPolicy:           strict-origin-when-cross-origin
+//	XXSSProtection:           1; mode=block
+//	StrictTransportSecurity:  (not set by default)
 type SecurityHeadersConfig struct {
-	ContentSecurityPolicy string
+	ContentSecurityPolicy   string // Content-Security-Policy header
+	XFrameOptions           string // X-Frame-Options header
+	XContentTypeOptions     string // X-Content-Type-Options header
+	ReferrerPolicy          string // Referrer-Policy header
+	XXSSProtection          string // X-XSS-Protection header
+	StrictTransportSecurity string // Strict-Transport-Security header (set only if HTTPS)
 }
 
 // Error constants for consistent error messages
