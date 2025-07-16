@@ -29,6 +29,22 @@ func (e *AuthError) Error() string {
 
 func (e *AuthError) Unwrap() error { return e.Err }
 
+// ConfigError represents an error related to configuration loading or validation.
+type ConfigError struct {
+	Field  string // The config field or env var involved
+	Reason string // Human-readable reason
+	Err    error  // Underlying error, if any
+}
+
+func (e *ConfigError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("config error for field %q: %s: %v", e.Field, e.Reason, e.Err)
+	}
+	return fmt.Sprintf("config error for field %q: %s", e.Field, e.Reason)
+}
+
+func (e *ConfigError) Unwrap() error { return e.Err }
+
 // SessionSecurityConfig contains session security configuration
 type SessionSecurityConfig struct {
 	HTTPOnly bool
@@ -110,17 +126,28 @@ type AuthRoutes struct {
 	AuthExempt []string // Routes to be exempt from auth
 }
 
-// NewAuthConfig creates a new AuthConfig based on the provided parameters
+// NewAuthConfig creates a new AuthConfig based on the provided parameters.
+// Returns a ConfigError if any required parameter is missing or invalid.
+//
+// Example error handling:
+//
+//	err := crooner.NewAuthConfig(ctx, e, params)
+//	if err != nil {
+//	    var cfgErr *crooner.ConfigError
+//	    if errors.As(err, &cfgErr) {
+//	        log.Printf("Config error: %s", cfgErr)
+//	    } else {
+//	        log.Printf("Other error: %v", err)
+//	    }
+//	}
 func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) error {
-	// Validate parameters (remove SessionStore check)
 	if err := validateAuthParams(params); err != nil {
 		return err
 	}
 
-	// Set up OIDC provider and OAuth2 configuration
 	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
 	if err != nil {
-		return fmt.Errorf("failed to initialize OIDC provider: %w", err)
+		return &ConfigError{Field: "TenantID", Reason: "failed to initialize OIDC provider", Err: err}
 	}
 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
@@ -130,15 +157,13 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		params.CookieName = "crooner-auth"
 	}
 
-	// Apply default session security if not provided
 	if params.SessionSecurity == nil {
 		params.SessionSecurity = getDefaultSessionSecurity()
 	}
 
-	// Apply default security headers if not provided
 	if params.SecurityHeaders == nil {
 		params.SecurityHeaders = &SecurityHeadersConfig{
-			ContentSecurityPolicy: "default-src 'self'", // secure default
+			ContentSecurityPolicy: "default-src 'self'",
 		}
 	}
 
@@ -162,7 +187,6 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		ErrorConfig:       params.ErrorConfig,
 		SecurityHeaders:   params.SecurityHeaders,
 	}
-
 	authHandlerConfig := &AuthHandlerConfig{
 		AuthConfig:         authConfig,
 		SessionValueClaims: params.SessionValueClaims,
@@ -172,48 +196,51 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 	return nil
 }
 
-// validateAuthParams ensures all necessary parameters are provided
+// validateAuthParams ensures all necessary parameters are provided and valid.
+// Returns a ConfigError if any parameter is missing or invalid.
 func validateAuthParams(params *AuthConfigParams) error {
 	if params.TenantID == "" {
-		return fmt.Errorf("missing required parameter: TenantID")
+		return &ConfigError{Field: "TenantID", Reason: "missing required parameter"}
+	}
+	if !isValidUUID(params.TenantID) {
+		return &ConfigError{Field: "TenantID", Reason: "invalid UUID format"}
 	}
 	if params.ClientID == "" {
-		return fmt.Errorf("missing required parameter: ClientID")
+		return &ConfigError{Field: "ClientID", Reason: "missing required parameter"}
+	}
+	if !isValidUUID(params.ClientID) {
+		return &ConfigError{Field: "ClientID", Reason: "invalid UUID format"}
 	}
 	if params.ClientSecret == "" {
-		return fmt.Errorf("missing required parameter: ClientSecret")
+		return &ConfigError{Field: "ClientSecret", Reason: "missing required parameter"}
 	}
 	if params.RedirectURL == "" {
-		return fmt.Errorf("missing required parameter: RedirectURL")
+		return &ConfigError{Field: "RedirectURL", Reason: "missing required parameter"}
+	}
+	if err := validateURL(params.RedirectURL); err != nil {
+		return &ConfigError{Field: "RedirectURL", Reason: "invalid URL", Err: err}
+	}
+	if params.LogoutURLRedirect == "" {
+		return &ConfigError{Field: "LogoutURLRedirect", Reason: "missing required parameter"}
+	}
+	if err := validateURL(params.LogoutURLRedirect); err != nil {
+		return &ConfigError{Field: "LogoutURLRedirect", Reason: "invalid URL", Err: err}
+	}
+	if params.LoginURLRedirect == "" {
+		return &ConfigError{Field: "LoginURLRedirect", Reason: "missing required parameter"}
+	}
+	if err := validateURL(params.LoginURLRedirect); err != nil {
+		return &ConfigError{Field: "LoginURLRedirect", Reason: "invalid URL", Err: err}
 	}
 	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
-		return fmt.Errorf("missing required auth routes: Login, Logout, Callback, and Redirect routes must be defined")
+		return &ConfigError{Field: "AuthRoutes", Reason: "missing required auth routes: Login, Logout, Callback must be defined"}
 	}
-	// No SessionStore check
-
-	// Validate TenantID format (UUID)
-	if !isValidUUID(params.TenantID) {
-		return fmt.Errorf("invalid TenantID format: must be a valid UUID")
+	// Validate AdditionalScopes (optional, but should be non-empty strings)
+	for i, scope := range params.AdditionalScopes {
+		if strings.TrimSpace(scope) == "" {
+			return &ConfigError{Field: fmt.Sprintf("AdditionalScopes[%d]", i), Reason: "scope cannot be empty"}
+		}
 	}
-
-	// Validate ClientID format (UUID)
-	if !isValidUUID(params.ClientID) {
-		return fmt.Errorf("invalid ClientID format: must be a valid UUID")
-	}
-
-	// Validate URLs
-	if err := validateURL(params.RedirectURL); err != nil {
-		return fmt.Errorf("invalid RedirectURL: %w", err)
-	}
-
-	if err := validateURL(params.LogoutURLRedirect); err != nil {
-		return fmt.Errorf("invalid LogoutURLRedirect: %w", err)
-	}
-
-	if err := validateURL(params.LoginURLRedirect); err != nil {
-		return fmt.Errorf("invalid LoginURLRedirect: %w", err)
-	}
-
 	return nil
 }
 
