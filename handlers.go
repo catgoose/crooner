@@ -264,15 +264,36 @@ func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
 func (a *AuthHandlerConfig) securityHeadersMiddleware() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			c.Response().Header().Set("X-Content-Type-Options", "nosniff")
-			c.Response().Header().Set("X-Frame-Options", "DENY")
-			c.Response().Header().Set("X-XSS-Protection", "1; mode=block")
-			c.Response().Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-			csp := "default-src 'self'"
-			if a.AuthConfig.SecurityHeaders != nil && a.AuthConfig.SecurityHeaders.ContentSecurityPolicy != "" {
-				csp = a.AuthConfig.SecurityHeaders.ContentSecurityPolicy
+			h := a.AuthConfig.SecurityHeaders
+			if h == nil {
+				h = &SecurityHeadersConfig{}
 			}
-			c.Response().Header().Set("Content-Security-Policy", csp)
+
+			headers := []struct {
+				key   string
+				value string
+				def   string
+			}{
+				{"Content-Security-Policy", h.ContentSecurityPolicy, "default-src 'self'"},
+				{"X-Frame-Options", h.XFrameOptions, "DENY"},
+				{"X-Content-Type-Options", h.XContentTypeOptions, "nosniff"},
+				{"Referrer-Policy", h.ReferrerPolicy, "strict-origin-when-cross-origin"},
+				{"X-XSS-Protection", h.XXSSProtection, "1; mode=block"},
+			}
+
+			for _, hdr := range headers {
+				val := hdr.def
+				if hdr.value != "" {
+					val = hdr.value
+				}
+				c.Response().Header().Set(hdr.key, val)
+			}
+
+			// Set Strict-Transport-Security only if config is non-empty and request is HTTPS
+			if h.StrictTransportSecurity != "" && c.Scheme() == "https" {
+				c.Response().Header().Set("Strict-Transport-Security", h.StrictTransportSecurity)
+			}
+
 			return next(c)
 		}
 	}
