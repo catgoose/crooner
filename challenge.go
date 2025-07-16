@@ -3,9 +3,22 @@ package crooner
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"fmt"
 
 	"golang.org/x/exp/rand"
 )
+
+// ChallengeError represents an error during PKCE challenge or state generation.
+type ChallengeError struct {
+	Op  string // Operation (e.g., "GenerateCodeVerifier", "GenerateState")
+	Err error  // Underlying error
+}
+
+func (e *ChallengeError) Error() string {
+	return fmt.Sprintf("challenge error during %s: %v", e.Op, e.Err)
+}
+
+func (e *ChallengeError) Unwrap() error { return e.Err }
 
 // GenerateCodeChallenge generates a SHA256 code challenge from the verifier
 func GenerateCodeChallenge(verifier string) string {
@@ -17,7 +30,7 @@ func GenerateCodeChallenge(verifier string) string {
 func GenerateCodeVerifier() (string, error) {
 	verifier := make([]byte, 64)
 	if _, err := rand.Read(verifier); err != nil {
-		return "", err
+		return "", &ChallengeError{Op: "GenerateCodeVerifier", Err: err}
 	}
 	return base64.RawURLEncoding.EncodeToString(verifier), nil
 }
@@ -26,7 +39,7 @@ func GenerateCodeVerifier() (string, error) {
 func GenerateState() (string, error) {
 	state := make([]byte, 32)
 	if _, err := rand.Read(state); err != nil {
-		return "", err
+		return "", &ChallengeError{Op: "GenerateState", Err: err}
 	}
 	return base64.RawURLEncoding.EncodeToString(state), nil
 }

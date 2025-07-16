@@ -3,6 +3,7 @@
 <!--toc:start-->
 
 - [Crooner: Secure Azure AD Authentication for Go (Echo)](#crooner-secure-azure-ad-authentication-for-go-echo)
+  - [About](#about)
   - [Features](#features)
   - [Installation](#installation)
   - [Quick Start](#quick-start)
@@ -10,7 +11,11 @@
     - [2. Set Up Session Management (router.go)](#2-set-up-session-management-routergo)
   - [Configuration](#configuration)
     - [Session Management (Best Practice)](#session-management-best-practice)
-    - [Content Security Policy (CSP)](#content-security-policy-csp)
+    - [Content Security Policy (CSP) and Security Headers](#content-security-policy-csp-and-security-headers)
+      - [Default Security Header Values](#default-security-header-values)
+    - [Session Configuration: Functional Options](#session-configuration-functional-options)
+      - [Available Options](#available-options)
+      - [Example Usage](#example-usage)
   - [Advanced Usage](#advanced-usage)
     - [Customizing SCS Config](#customizing-scs-config)
     - [Custom SessionManager](#custom-sessionmanager)
@@ -21,6 +26,13 @@
   - [Contributing](#contributing)
   - [License](#license)
   <!--toc:end-->
+
+## About
+
+![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
+
+Ever want to authenticate with Azure in your Go project but MSAL has no
+examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/468>
 
 Crooner is a Go library for secure, modern Azure AD authentication in Echo web apps. It provides pluggable session management, secure defaults, and easy integration with Azure OIDC/PKCE flows.
 
@@ -114,19 +126,71 @@ func setupAuth(e *echo.Echo, appConfig *config.AppConfig) {
 - Generate the cookie name with `crooner.PersistentCookieSuffix(secret, appName)`
 - Use `crooner.DefaultSCSFactoryConfigWithSuffix(suffix)` for secure defaults
 
-### Content Security Policy (CSP)
+### Content Security Policy (CSP) and Security Headers
+
+You can configure all major security headers via `SecurityHeadersConfig`. If a field is empty, a secure default will be used.
 
 ```go
 params := &crooner.AuthConfigParams{
  // ... other config ...
  SecurityHeaders: &crooner.SecurityHeadersConfig{
-  ContentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+  ContentSecurityPolicy:   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://login.microsoftonline.com;",
+  XFrameOptions:           "DENY",
+  XContentTypeOptions:     "nosniff",
+  ReferrerPolicy:          "strict-origin-when-cross-origin",
+  XXSSProtection:          "1; mode=block",
+  StrictTransportSecurity: "max-age=63072000; includeSubDomains; preload", // set only if HTTPS
  },
 }
 ```
 
-- Default is strict: `default-src 'self'`
-- Relax as needed for your frontend (e.g., htmx, Quill.js)
+#### Default Security Header Values
+
+| Header                    | Default Value                     |
+| ------------------------- | --------------------------------- |
+| Content-Security-Policy   | `default-src 'self'`              |
+| X-Frame-Options           | `DENY`                            |
+| X-Content-Type-Options    | `nosniff`                         |
+| Referrer-Policy           | `strict-origin-when-cross-origin` |
+| X-XSS-Protection          | `1; mode=block`                   |
+| Strict-Transport-Security | _(not set by default)_            |
+
+- To override a header, set the corresponding field in `SecurityHeadersConfig`.
+- `Strict-Transport-Security` should only be set if your app is always served over HTTPS.
+
+### Session Configuration: Functional Options
+
+Crooner uses idiomatic Go functional options for session configuration. You can compose these options to customize session behavior.
+
+#### Available Options
+
+- `WithPersistentCookieName(secret, appName string)` — Sets a non-guessable, persistent cookie name using your secret and app name (recommended for production).
+- `WithCookieName(name string)` — Sets a custom cookie name.
+- `WithCookieDomain(domain string)` — Sets the cookie domain.
+- `WithCookiePath(path string)` — Sets the cookie path.
+- `WithCookieSecure(secure bool)` — Sets the Secure flag.
+- `WithCookieHTTPOnly(httpOnly bool)` — Sets the HttpOnly flag.
+- `WithCookieSameSite(sameSite http.SameSite)` — Sets the SameSite mode.
+- `WithLifetime(lifetime time.Duration)` — Sets the session lifetime.
+- `WithStore(store scs.Store)` — Sets a custom session store backend (e.g., Redis).
+
+#### Example Usage
+
+```go
+sessionMgr, scsMgr, err := crooner.NewSCSManager(
+ crooner.WithPersistentCookieName(appConfig.SessionSecret, appConfig.AppName),
+ crooner.WithLifetime(12*time.Hour),
+ crooner.WithCookieDomain("example.com"),
+ // Add other options as needed
+)
+if err != nil {
+ log.Fatalf("failed to initialize session manager: %v", err)
+}
+```
+
+- You can combine as many options as you need.
+- If you use both `WithPersistentCookieName` and `WithCookieName`, the last one wins.
+- All options have secure defaults if not set.
 
 ---
 
