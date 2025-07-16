@@ -306,7 +306,9 @@ The session lifetime determines how long a user stays logged in before needing t
 
 **Shorter lifetimes are more secure, longer lifetimes are more convenient.**
 
-### Example: Setting Session Lifetime
+### Examples
+
+## Setting Session Lifetime
 
 ```go
 cfg := crooner.DefaultSecureSessionConfig()
@@ -319,6 +321,26 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
+
+## Retrieving the Session Cookie Name
+
+When you create a session manager using crooner, the session cookie name may be generated dynamically (for example, using `WithPersistentCookieName`). To retrieve the actual cookie name for use in your application (such as in middleware), use the `GetCookieName()` method on the session manager:
+
+```go
+sessionMgr, _, err := crooner.NewSCSManager(
+ crooner.WithPersistentCookieName(appConfig.SessionSecret, appConfig.AppName),
+ crooner.WithLifetime(24*time.Hour),
+)
+if err != nil {
+ // handle error
+}
+cookieName := sessionMgr.GetCookieName()
+
+// Use cookieName in your middleware setup
+// e.g., e.Use(middleware.AzureClaims(cookieName))
+```
+
+This ensures your middleware and other components always use the correct session cookie name, even if it is generated or hashed internally.
 
 ---
 
@@ -345,23 +367,3 @@ When I was a kid, I fell into a river and a fish bumped me out. I was supposed t
 ---
 
 [Source: ITYSL Driving Crooner Quotes](https://ithinkyoushouldquote.me/sketch/the-driving-crooner/)
-
-## Retrieving the Session Cookie Name
-
-When you create a session manager using crooner, the session cookie name may be generated dynamically (for example, using `WithPersistentCookieName`). To retrieve the actual cookie name for use in your application (such as in middleware), use the `GetCookieName()` method on the session manager:
-
-```go
-sessionMgr, _, err := crooner.NewSCSManager(
-    crooner.WithPersistentCookieName(appConfig.SessionSecret, appConfig.AppName),
-    crooner.WithLifetime(24*time.Hour),
-)
-if err != nil {
-    // handle error
-}
-cookieName := sessionMgr.GetCookieName()
-
-// Use cookieName in your middleware setup
-// e.g., e.Use(middleware.AzureClaims(cookieName))
-```
-
-This ensures your middleware and other components always use the correct session cookie name, even if it is generated or hashed internally.
