@@ -13,6 +13,22 @@ import (
 	"golang.org/x/oauth2/microsoft"
 )
 
+// AuthError represents an error related to authentication or OIDC operations.
+type AuthError struct {
+	Op     string // Operation (e.g., "ExchangeToken", "VerifyIDToken")
+	Reason string // Human-readable reason
+	Err    error  // Underlying error, if any
+}
+
+func (e *AuthError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("auth error during %s: %s: %v", e.Op, e.Reason, e.Err)
+	}
+	return fmt.Sprintf("auth error during %s: %s", e.Op, e.Reason)
+}
+
+func (e *AuthError) Unwrap() error { return e.Err }
+
 // SessionSecurityConfig contains session security configuration
 type SessionSecurityConfig struct {
 	HTTPOnly bool
@@ -277,12 +293,12 @@ func (c *AuthConfig) ExchangeToken(ctx context.Context, code, codeVerifier strin
 func (c *AuthConfig) VerifyIDToken(ctx context.Context, idToken string) (map[string]any, error) {
 	idTokenObj, err := c.Verifier.Verify(ctx, idToken)
 	if err != nil {
-		return nil, fmt.Errorf("failed to verify ID token: %w", err)
+		return nil, &AuthError{Op: "VerifyIDToken", Reason: "failed to verify ID token", Err: err}
 	}
 
 	var claims map[string]any
 	if err := idTokenObj.Claims(&claims); err != nil {
-		return nil, fmt.Errorf("failed to parse ID token claims: %w", err)
+		return nil, &AuthError{Op: "VerifyIDToken", Reason: "failed to parse ID token claims", Err: err}
 	}
 	return claims, nil
 }

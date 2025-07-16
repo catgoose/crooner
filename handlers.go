@@ -18,6 +18,29 @@ type AuthHandlerConfig struct {
 	SessionMgr         SessionManager // Use interface for all session operations
 }
 
+// SessionError represents an error related to session operations.
+type SessionError struct {
+	Key    string // The session key involved
+	Reason string // A human-readable reason for the error
+}
+
+func (e *SessionError) Error() string {
+	return fmt.Sprintf("session error for key %q: %s", e.Key, e.Reason)
+}
+
+// getSessionString retrieves a string from the session or returns a SessionError.
+func (a *AuthHandlerConfig) getSessionString(c echo.Context, key string) (string, error) {
+	val, err := a.SessionMgr.Get(c, key)
+	if err != nil {
+		return "", &SessionError{Key: key, Reason: "not found"}
+	}
+	str, ok := val.(string)
+	if !ok {
+		return "", &SessionError{Key: key, Reason: "not a string"}
+	}
+	return str, nil
+}
+
 // authMiddleware generates a middleware to enforce authentication based on session data
 func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -27,7 +50,7 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 			}
 
 			// Retrieve and validate session
-			if user, err := a.SessionMgr.Get(c, "user"); err != nil || user == nil {
+			if _, err := a.getSessionString(c, "user"); err != nil {
 				return c.Redirect(http.StatusFound, routes.Login)
 			}
 
@@ -79,17 +102,12 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		sess, err := a.SessionMgr.Get(c, "oauth_state")
+		expectedState, err := a.getSessionString(c, "oauth_state")
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
 
 		// Validate state parameter
-		expectedState, ok := sess.(string)
-		if !ok {
-			return a.handleError(c, http.StatusBadRequest, "State not found in session", nil)
-		}
-
 		receivedState := c.QueryParam("state")
 		if receivedState != expectedState {
 			return a.handleError(c, http.StatusBadRequest, "Invalid state parameter", nil)
@@ -100,13 +118,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear state from session", err)
 		}
 
-		sess, err = a.SessionMgr.Get(c, "code_verifier")
+		codeVerifier, err := a.getSessionString(c, "code_verifier")
 		if err != nil {
-			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
-		}
-		codeVerifier, ok := sess.(string)
-		if !ok {
-			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", nil)
+			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", err)
 		}
 		code := c.QueryParam("code")
 		if code == "" {
