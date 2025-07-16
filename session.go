@@ -42,7 +42,8 @@ type SessionManager interface {
 
 // SCSManager implements SessionManager using SCS (github.com/alexedwards/scs/v2)
 type SCSManager struct {
-	Session *scs.SessionManager
+	Session    *scs.SessionManager
+	cookieName string
 }
 
 func (s *SCSManager) Get(c echo.Context, key string) (any, error) {
@@ -235,7 +236,7 @@ func NewSCSManagerWithConfig(cfg SessionConfig) (*SCSManager, *scs.SessionManage
 	if cfg.Store != nil {
 		scsMgr.Store = cfg.Store
 	}
-	return &SCSManager{Session: scsMgr}, scsMgr, nil
+	return &SCSManager{Session: scsMgr, cookieName: cfg.CookieName}, scsMgr, nil
 }
 
 // NewSCSManager creates a new SCSManager using functional options.
@@ -286,3 +287,8 @@ func randomSuffix() string {
 //
 // Note: SessionManager.Set/Get accept values of type 'any'.
 // It is recommended to use simple, serializable types (string, int, etc.) for session values.
+
+// GetCookieName returns the session cookie name used by this manager.
+func (s *SCSManager) GetCookieName() string {
+	return s.cookieName
+}
