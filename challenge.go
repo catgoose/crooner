@@ -1,10 +1,11 @@
 package crooner
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+
+	"crypto/rand"
 )
 
 // ChallengeError represents an error during PKCE challenge or state generation.
