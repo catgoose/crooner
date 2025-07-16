@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
-
 	"slices"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -62,7 +61,6 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 // SetupAuth initializes the authentication middleware and routes
 func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	e.Use(a.securityHeadersMiddleware())
-	e.Use(a.secureSessionMiddleware())
 	e.Use(a.authMiddleware(a.AuthConfig.AuthRoutes))
 
 	routes := a.AuthConfig.AuthRoutes
@@ -168,8 +166,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 // logoutHandler creates a handler function for the logout route
 func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		if err := a.SessionMgr.Clear(c); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to clear session", err)
+		// Use ClearInvalidate for full session cleanup
+		if err := a.SessionMgr.ClearInvalidate(c); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear/invalidate session", err)
 		}
 
 		// Validate redirect URL
@@ -201,24 +200,26 @@ func (a *AuthHandlerConfig) isAuthExemptRoute(c echo.Context, routes *AuthRoutes
 	return false
 }
 
-// Session helper methods
+// ErrorResponse represents a standard JSON error response.
+type ErrorResponse struct {
+	Error   string `json:"error"`
+	Details string `json:"details,omitempty"`
+}
+
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
 	// Always log detailed errors internally
 	if err != nil {
 		c.Logger().Errorf("Auth error: %s - %v", message, err)
 	}
 
-	// Return user-friendly message
-	userMessage := ErrGenericAuth
-	if a.AuthConfig.ErrorConfig != nil && a.AuthConfig.ErrorConfig.ShowDetails {
-		if err != nil {
-			userMessage = fmt.Sprintf("%s: %s", message, err.Error())
-		} else {
-			userMessage = message
-		}
+	resp := ErrorResponse{
+		Error: message,
+	}
+	if a.AuthConfig.ErrorConfig != nil && a.AuthConfig.ErrorConfig.ShowDetails && err != nil {
+		resp.Details = err.Error()
 	}
 
-	return c.String(status, userMessage)
+	return c.JSON(status, resp)
 }
 
 // validateRedirectURL validates redirect URLs with security checks
@@ -257,16 +258,6 @@ func (a *AuthHandlerConfig) validateRedirectURL(rawURL string) error {
 	}
 
 	return nil
-}
-
-// secureSessionMiddleware configures secure session options
-func (a *AuthHandlerConfig) secureSessionMiddleware() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Session options should be set in the app, not here
-			return next(c)
-		}
-	}
 }
 
 // securityHeadersMiddleware adds security headers to responses

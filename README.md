@@ -1,5 +1,7 @@
 # Crooner: Secure Azure AD Authentication for Go (Echo)
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/catgoose/crooner.svg)](https://pkg.go.dev/github.com/catgoose/crooner)
+
 <!--toc:start-->
 
 - [Crooner: Secure Azure AD Authentication for Go (Echo)](#crooner-secure-azure-ad-authentication-for-go-echo)
@@ -22,7 +24,6 @@
   - [Security Best Practices](#security-best-practices)
   - [Session Lifetime Recommendations](#session-lifetime-recommendations)
     - [Example: Setting Session Lifetime](#example-setting-session-lifetime)
-  - [FAQ / Troubleshooting](#faq-troubleshooting)
   - [Contributing](#contributing)
   - [License](#license)
   <!--toc:end-->
@@ -36,8 +37,6 @@ examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authen
 
 Crooner is a Go library for secure, modern Azure AD authentication in Echo web apps. It provides pluggable session management, secure defaults, and easy integration with Azure OIDC/PKCE flows.
 
----
-
 ## Features
 
 - **Azure AD PKCE/OIDC login**
@@ -46,15 +45,11 @@ Crooner is a Go library for secure, modern Azure AD authentication in Echo web a
 - **Secure, non-guessable session cookies**
 - **Designed for Echo, but extensible**
 
----
-
 ## Installation
 
 ```bash
 go get github.com/catgoose/crooner@latest
 ```
-
----
 
 ## Quick Start
 
@@ -192,8 +187,6 @@ if err != nil {
 - If you use both `WithPersistentCookieName` and `WithCookieName`, the last one wins.
 - All options have secure defaults if not set.
 
----
-
 ## Advanced Usage
 
 ### Customizing SCS Config
@@ -213,8 +206,6 @@ sessionMgr, scsMgr := crooner.NewSCSManagerWithConfig(cfg)
 
 - Implement the `SessionManager` interface for your own backend (e.g., DB, Redis, etc.)
 
----
-
 ## Security Best Practices
 
 - Use a strong, random session secret (32+ bytes)
@@ -222,8 +213,6 @@ sessionMgr, scsMgr := crooner.NewSCSManagerWithConfig(cfg)
 - Rotate the session secret to force logout of all users
 - Use HTTPS, HttpOnly, SameSite, Secure cookies
 - Configure CSP for your frontend’s needs
-
----
 
 ## Session Lifetime Recommendations
 
@@ -249,21 +238,6 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
-
----
-
-## FAQ / Troubleshooting
-
-- **Why do I see multiple cookies?**
-  - Only the cookie matching your current config is used. Use a persistent, secret-derived name for production.
-- **Why are users logged out after a restart?**
-  - If the cookie name changes, users lose their session. Use a persistent name as shown above.
-- **How do I force logout all users?**
-  - Rotate the session secret.
-- **How do I allow inline scripts/styles?**
-  - Relax your CSP as shown above.
-
----
 
 ## Contributing
 
