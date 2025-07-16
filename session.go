@@ -67,7 +67,7 @@ func (s *SCSManager) Invalidate(c echo.Context) error {
 	return s.Session.Destroy(c.Request().Context())
 }
 
-// Implement for SCSManager:
+// ClearInvalidate removes all values and invalidates the session (expires cookie).
 func (s *SCSManager) ClearInvalidate(c echo.Context) error {
 	if err := s.Clear(c); err != nil {
 		return err

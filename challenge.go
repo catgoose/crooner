@@ -1,11 +1,10 @@
 package crooner
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
-
-	"golang.org/x/exp/rand"
 )
 
 // ChallengeError represents an error during PKCE challenge or state generation.
