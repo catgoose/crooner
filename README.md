@@ -1,41 +1,51 @@
-# Crooner: Secure Azure AD Authentication for Go (Echo)
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/catgoose/crooner.svg)](https://pkg.go.dev/github.com/catgoose/crooner)
+# 🎩 Crooner: You Gotta Be Right Next to Me for It to Look Real, Baby
 
 <!--toc:start-->
 
-- [Crooner: Secure Azure AD Authentication for Go (Echo)](#crooner-secure-azure-ad-authentication-for-go-echo)
-  - [About](#about)
-  - [Features](#features)
-  - [Installation](#installation)
-  - [Quick Start Example (Full, Generic)](#quick-start-example-full-generic)
-  - [Configuration](#configuration)
+- [🎩 Crooner: You Gotta Be Right Next to Me for It to Look Real, Baby](#🎩-crooner-you-gotta-be-right-next-to-me-for-it-to-look-real-baby)
+  - [What Is This? Why Do People Hate It?](#what-is-this-why-do-people-hate-it)
+  - [Features (Don't Try to Steal My Decals)](#features-dont-try-to-steal-my-decals)
+  - [Installation (You Gotta Give!)](#installation-you-gotta-give)
+  - [Quick Start Example (You Gotta Be Right Next to Me)](#quick-start-example-you-gotta-be-right-next-to-me)
+  - [Configuration (Don't Let Them Make It Look Fake)](#configuration-dont-let-them-make-it-look-fake)
     - [Session Management (Best Practice)](#session-management-best-practice)
     - [Content Security Policy (CSP) and Security Headers](#content-security-policy-csp-and-security-headers)
       - [Default Security Header Values](#default-security-header-values)
     - [Session Configuration: Functional Options](#session-configuration-functional-options)
       - [Available Options](#available-options)
       - [Example Usage](#example-usage)
-  - [Advanced Usage](#advanced-usage)
-    - [Customizing SCS Config](#customizing-scs-config)
+  - [Advanced Usage (You Gotta Be Right Next to Me)](#advanced-usage-you-gotta-be-right-next-to-me)
     - [Custom SessionManager](#custom-sessionmanager)
-  - [Security Best Practices](#security-best-practices)
-  - [Session Lifetime Recommendations](#session-lifetime-recommendations)
+  - [Security Best Practices (Don't Let Them Make It Look Fake)](#security-best-practices-dont-let-them-make-it-look-fake)
+  - [Session Lifetime Recommendations (How Long's the Set?)](#session-lifetime-recommendations-how-longs-the-set)
     - [Example: Setting Session Lifetime](#example-setting-session-lifetime)
-  - [Contributing](#contributing)
+  - [Contributing (You Gotta Give!)](#contributing-you-gotta-give)
   - [License](#license)
+  - [Questions? PRs? Hecklers?](#questions-prs-hecklers)
   <!--toc:end-->
 
-## About
+[![Go Reference](https://pkg.go.dev/badge/github.com/catgoose/crooner.svg)](https://pkg.go.dev/github.com/catgoose/crooner)
 
 ![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
 
-Ever want to authenticate with Azure in your Go project but MSAL has no
-examples for a hosted HTTP service: <https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/468>
+> Fuck! He's trying to steal my decals!
+> Fuck! They're trying to make it look fake! Goddammit!
+> You gotta give!
+> The hat and the cigar. You're driving with the Driving Crooner, baby.
+
+---
+
+## What Is This? Why Do People Hate It?
+
+I don't know. Some people hate this, James. I don't know what it is, but they fuckin' hate it. There's people that wanna kill me, James. But I gotta figure out how to make money on this thing. It's simply too good. Crooner is for Go web apps using Echo, and it's the real deal. Not like those other guys, with their fake decals and their fake logins. This is the real Crooner. The hat and the cigar.
+
+Ever want to authenticate with Azure in your Go project but MSAL has no examples for a hosted HTTP service? [MSAL Issue #468](https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/468)
 
 Crooner is a Go library for secure, modern Azure AD authentication in Echo web apps. It provides pluggable session management, secure defaults, and easy integration with Azure OIDC/PKCE flows.
 
-## Features
+---
+
+## Features (Don't Try to Steal My Decals)
 
 - **Azure AD PKCE/OIDC login**
 - **Pluggable session management** (SCS, custom)
@@ -43,13 +53,19 @@ Crooner is a Go library for secure, modern Azure AD authentication in Echo web a
 - **Secure, non-guessable session cookies**
 - **Designed for Echo, but extensible**
 
-## Installation
+---
+
+## Installation (You Gotta Give!)
 
 ```bash
 go get github.com/catgoose/crooner@latest
 ```
 
-## Quick Start Example (Full, Generic)
+---
+
+## Quick Start Example (You Gotta Be Right Next to Me)
+
+Here's how you get the show on the road:
 
 ```go
 package main
@@ -155,14 +171,23 @@ func main() {
 
 ---
 
-## Configuration
+## Configuration (Don't Let Them Make It Look Fake)
 
 ### Session Management (Best Practice)
 
 - Use a strong, random `SESSION_SECRET` (set via env/config)
 - Use a unique `AppName` per app
-- Generate the cookie name with `crooner.PersistentCookieSuffix(secret, appName)`
-- Use `crooner.DefaultSecureSessionConfig()` for secure defaults. To set a persistent, non-guessable cookie name, use `crooner.PersistentCookieSuffix(secret, appName)` and assign it to the config's CookieName field.
+- Set a persistent, non-guessable cookie name using `crooner.WithPersistentCookieName(secret, appName)` when creating your session manager:
+
+  ```go
+  sessionMgr, scsMgr, err := crooner.NewSCSManager(
+   crooner.WithPersistentCookieName(secret, appName),
+   // ...other options...
+  )
+
+  ```
+
+- Secure defaults are applied automatically by `NewSCSManager`. You only need to use advanced config if you have special requirements.
 
 ### Content Security Policy (CSP) and Security Headers
 
@@ -202,15 +227,17 @@ Crooner uses idiomatic Go functional options for session configuration. You can 
 
 #### Available Options
 
-- `WithPersistentCookieName(secret, appName string)` — Sets a non-guessable, persistent cookie name using your secret and app name (recommended for production).
-- `WithCookieName(name string)` — Sets a custom cookie name.
-- `WithCookieDomain(domain string)` — Sets the cookie domain.
-- `WithCookiePath(path string)` — Sets the cookie path.
-- `WithCookieSecure(secure bool)` — Sets the Secure flag.
-- `WithCookieHTTPOnly(httpOnly bool)` — Sets the HttpOnly flag.
-- `WithCookieSameSite(sameSite http.SameSite)` — Sets the SameSite mode.
-- `WithLifetime(lifetime time.Duration)` — Sets the session lifetime.
-- `WithStore(store scs.Store)` — Sets a custom session store backend (e.g., Redis).
+| Option                                             | Description                                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `WithPersistentCookieName(secret, appName string)` | Sets a non-guessable, persistent cookie name using your secret and app name (recommended for production). |
+| `WithCookieName(name string)`                      | Sets a custom cookie name.                                                                                |
+| `WithCookieDomain(domain string)`                  | Sets the cookie domain.                                                                                   |
+| `WithCookiePath(path string)`                      | Sets the cookie path.                                                                                     |
+| `WithCookieSecure(secure bool)`                    | Sets the Secure flag.                                                                                     |
+| `WithCookieHTTPOnly(httpOnly bool)`                | Sets the HttpOnly flag.                                                                                   |
+| `WithCookieSameSite(sameSite http.SameSite)`       | Sets the SameSite mode.                                                                                   |
+| `WithLifetime(lifetime time.Duration)`             | Sets the session lifetime.                                                                                |
+| `WithStore(store scs.Store)`                       | Sets a custom session store backend (e.g., Redis).                                                        |
 
 #### Example Usage
 
@@ -230,14 +257,16 @@ if err != nil {
 - If you use both `WithPersistentCookieName` and `WithCookieName`, the last one wins.
 - All options have secure defaults if not set.
 
-## Advanced Usage
+---
 
-### Customizing SCS Config
+## Advanced Usage (You Gotta Be Right Next to Me)
+
+If you need to fully customize the session config, you can use `crooner.DefaultSecureSessionConfig()` and then pass it to `crooner.NewSCSManagerWithConfig(cfg)`. This is for advanced use only.
 
 ```go
 cfg := crooner.DefaultSecureSessionConfig()
-suffix := crooner.PersistentCookieSuffix(appConfig.SessionSecret, appConfig.AppName)
-cfg.CookieName = "crooner-" + suffix
+// Customize as needed
+cfg.CookieName = "crooner-" + myCustomSuffix
 cfg.Lifetime = 7 * 24 * time.Hour // 7 days
 cfg.CookieDomain = ".example.com"
 cfg.CookieSameSite = http.SameSiteStrictMode
@@ -254,7 +283,9 @@ if err != nil {
 
 - Implement the `SessionManager` interface for your own backend (e.g., DB, Redis, etc.)
 
-## Security Best Practices
+---
+
+## Security Best Practices (Don't Let Them Make It Look Fake)
 
 - Use a strong, random session secret (32+ bytes)
 - Use a unique, non-guessable cookie name per app (`crooner-<hash>`, not predictable)
@@ -262,7 +293,9 @@ if err != nil {
 - Use HTTPS, HttpOnly, SameSite, Secure cookies
 - Configure CSP for your frontend’s needs
 
-## Session Lifetime Recommendations
+---
+
+## Session Lifetime Recommendations (How Long's the Set?)
 
 The session lifetime determines how long a user stays logged in before needing to re-authenticate. Choose a value that balances security and user experience:
 
@@ -287,7 +320,9 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
 
-## Contributing
+---
+
+## Contributing (You Gotta Give!)
 
 PRs and issues welcome! Please open an issue to discuss major changes first.
 
@@ -295,4 +330,18 @@ PRs and issues welcome! Please open an issue to discuss major changes first.
 
 ## License
 
-MIT
+MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
+
+---
+
+## Questions? PRs? Hecklers?
+
+Open an issue, send a PR, or just shout “Crooner!” into the night. We'll hear you. But you gotta be right next to me for it to look real.
+
+---
+
+When I was a kid, I fell into a river and a fish bumped me out. I was supposed to die. But a fish bumped me out with its nose. That was the earth telling me I'm supposed to do something great. And I know that's the Driving Crooner. It has to be. You know what I mean, James?
+
+---
+
+[Source: ITYSL Driving Crooner Quotes](https://ithinkyoushouldquote.me/sketch/the-driving-crooner/)
