@@ -8,9 +8,7 @@
   - [About](#about)
   - [Features](#features)
   - [Installation](#installation)
-  - [Quick Start](#quick-start)
-    - [1. Set Up Your Config (config.go)](#1-set-up-your-config-configgo)
-    - [2. Set Up Session Management (router.go)](#2-set-up-session-management-routergo)
+  - [Quick Start Example (Full, Generic)](#quick-start-example-full-generic)
   - [Configuration](#configuration)
     - [Session Management (Best Practice)](#session-management-best-practice)
     - [Content Security Policy (CSP) and Security Headers](#content-security-policy-csp-and-security-headers)
@@ -51,62 +49,107 @@ Crooner is a Go library for secure, modern Azure AD authentication in Echo web a
 go get github.com/catgoose/crooner@latest
 ```
 
-## Quick Start
-
-### 1. Set Up Your Config (config.go)
+## Quick Start Example (Full, Generic)
 
 ```go
+package main
+
 import (
+ "context"
+ "fmt"
+ "log"
+ "os"
+ "time"
+
  crooner "github.com/catgoose/crooner"
- "github.com/catgoose/dio"
- // ...
+ "github.com/labstack/echo/v4"
 )
 
 type AppConfig struct {
- // ... other fields ...
  SessionSecret string
  AppName       string
+ CroonerConfig *crooner.AuthConfigParams
+ SessionMgr    crooner.SessionManager
 }
 
 func LoadAppConfig() (*AppConfig, error) {
- // ... load other config ...
- secret, err := dio.Env("SESSION_SECRET")
- if err != nil {
-  return nil, err
+ // Load secrets/config from environment variables or your preferred config system
+ secret := os.Getenv("SESSION_SECRET")
+ if secret == "" {
+  return nil, fmt.Errorf("SESSION_SECRET is required")
  }
- appName := "tradesnewsletter" // or get from env/config if desired
- // ...
+ appName := "myApp" // or load from env/config
+
+ // Fill in your Azure AD and Crooner config
+ croonerConfig := &crooner.AuthConfigParams{
+  ClientID:          os.Getenv("AZURE_CLIENT_ID"),
+  ClientSecret:      os.Getenv("AZURE_CLIENT_SECRET"),
+  TenantID:          os.Getenv("AZURE_TENANT_ID"),
+  RedirectURL:       os.Getenv("AZURE_REDIRECT_URL"),
+  LogoutURLRedirect: os.Getenv("AZURE_LOGOUT_REDIRECT_URL"),
+  LoginURLRedirect:  os.Getenv("AZURE_LOGIN_REDIRECT_URL"),
+  AuthRoutes: &crooner.AuthRoutes{
+   Login:    "/login",
+   Logout:   "/logout",
+   Callback: "/callback",
+  },
+  SecurityHeaders: &crooner.SecurityHeadersConfig{
+   ContentSecurityPolicy:   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://login.microsoftonline.com;",
+   XFrameOptions:           "DENY",
+   XContentTypeOptions:     "nosniff",
+   ReferrerPolicy:          "strict-origin-when-cross-origin",
+   XXSSProtection:          "1; mode=block",
+   StrictTransportSecurity: "max-age=63072000; includeSubDomains; preload", // set only if HTTPS
+  },
+  // ...other config as needed...
+ }
+
  return &AppConfig{
-  // ...
   SessionSecret: secret,
   AppName:       appName,
+  CroonerConfig: croonerConfig,
  }, nil
 }
-```
 
-### 2. Set Up Session Management (router.go)
+func main() {
+ appConfig, err := LoadAppConfig()
+ if err != nil {
+  log.Fatalf("failed to load app config: %v", err)
+ }
 
-```go
-import (
- crooner "github.com/catgoose/crooner"
- // ...
-)
+ e := echo.New()
 
-func setupAuth(e *echo.Echo, appConfig *config.AppConfig) {
- suffix := crooner.PersistentCookieSuffix(appConfig.SessionSecret, appConfig.AppName)
- cfg := crooner.DefaultSecureSessionConfig()
- cfg.CookieName = "crooner-" + suffix
- cfg.CookieDomain = "example.com" // optional
- cfg.Lifetime = 12 * time.Hour    // example: shorter session
- // ... set any other options as needed
- sessionMgr, scsMgr := crooner.NewSCSManagerWithConfig(cfg)
+ // --- Session Management with Functional Options ---
+ sessionMgr, scsMgr, err := crooner.NewSCSManager(
+  crooner.WithPersistentCookieName(appConfig.SessionSecret, appConfig.AppName),
+  crooner.WithLifetime(12*time.Hour),
+  crooner.WithCookieDomain("example.com"), // optional
+  // ...add other options as needed
+ )
+ if err != nil {
+  log.Fatalf("failed to initialize session manager: %v", err)
+ }
  e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
  appConfig.SessionMgr = sessionMgr
  appConfig.CroonerConfig.SessionMgr = sessionMgr
+
+ // --- Crooner Auth Setup ---
  ctx := context.Background()
  if err := crooner.NewAuthConfig(ctx, e, appConfig.CroonerConfig); err != nil {
-  panic(fmt.Errorf("failed to initialize Crooner authentication: %v", err))
+  log.Fatalf("failed to initialize Crooner authentication: %v", err)
  }
+
+ // --- Your routes here ---
+ e.GET("/", func(c echo.Context) error {
+  return c.String(200, "Hello, Crooner!")
+ })
+
+ // Start server
+ port := os.Getenv("PORT")
+ if port == "" {
+  port = "8080"
+ }
+ e.Logger.Fatal(e.Start(":" + port))
 }
 ```
 
@@ -119,7 +162,7 @@ func setupAuth(e *echo.Echo, appConfig *config.AppConfig) {
 - Use a strong, random `SESSION_SECRET` (set via env/config)
 - Use a unique `AppName` per app
 - Generate the cookie name with `crooner.PersistentCookieSuffix(secret, appName)`
-- Use `crooner.DefaultSCSFactoryConfigWithSuffix(suffix)` for secure defaults
+- Use `crooner.DefaultSecureSessionConfig()` for secure defaults. To set a persistent, non-guessable cookie name, use `crooner.PersistentCookieSuffix(secret, appName)` and assign it to the config's CookieName field.
 
 ### Content Security Policy (CSP) and Security Headers
 
@@ -192,14 +235,19 @@ if err != nil {
 ### Customizing SCS Config
 
 ```go
-cfg := crooner.DefaultSCSFactoryConfigWithSuffix(suffix)
+cfg := crooner.DefaultSecureSessionConfig()
+suffix := crooner.PersistentCookieSuffix(appConfig.SessionSecret, appConfig.AppName)
+cfg.CookieName = "crooner-" + suffix
 cfg.Lifetime = 7 * 24 * time.Hour // 7 days
 cfg.CookieDomain = ".example.com"
 cfg.CookieSameSite = http.SameSiteStrictMode
 cfg.CookieSecure = true // (default is true)
 // Advanced: use Redis or another backend
 // cfg.Store = myRedisStore
-sessionMgr, scsMgr := crooner.NewSCSManagerWithConfig(cfg)
+sessionMgr, scsMgr, err := crooner.NewSCSManagerWithConfig(cfg)
+if err != nil {
+ log.Fatalf("failed to initialize session manager: %v", err)
+}
 ```
 
 ### Custom SessionManager
