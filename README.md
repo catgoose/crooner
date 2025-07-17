@@ -1,5 +1,9 @@
 # 🎩 Crooner: You Gotta Be Right Next to Me for It to Look Real, Baby
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/catgoose/crooner.svg)](https://pkg.go.dev/github.com/catgoose/crooner)
+
+![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
+
 <!--toc:start-->
 
 - [🎩 Crooner: You Gotta Be Right Next to Me for It to Look Real, Baby](#🎩-crooner-you-gotta-be-right-next-to-me-for-it-to-look-real-baby)
@@ -16,24 +20,23 @@
       - [Example Usage](#example-usage)
   - [Advanced Usage (You Gotta Be Right Next to Me)](#advanced-usage-you-gotta-be-right-next-to-me)
     - [Custom SessionManager](#custom-sessionmanager)
+      - [Example: Redis Implementation](#example-redis-implementation)
   - [Security Best Practices (Don't Let Them Make It Look Fake)](#security-best-practices-dont-let-them-make-it-look-fake)
   - [Session Lifetime Recommendations (How Long's the Set?)](#session-lifetime-recommendations-how-longs-the-set)
-    - [Example: Setting Session Lifetime](#example-setting-session-lifetime)
-  - [Contributing (You Gotta Give!)](#contributing-you-gotta-give)
-  - [License](#license)
+  - [Setting Session Lifetime](#setting-session-lifetime)
+    - [Examples](#examples)
+  - [Retrieving the Session Cookie Name](#retrieving-the-session-cookie-name)
+    - [Type-Specific Session Helper Functions](#type-specific-session-helper-functions)
+      - [Available Helpers](#available-helpers)
+      - [Usage Example](#usage-example)
   - [Questions? PRs? Hecklers?](#questions-prs-hecklers)
+  - [License](#license)
   <!--toc:end-->
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/catgoose/crooner.svg)](https://pkg.go.dev/github.com/catgoose/crooner)
-
-![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
 
 > Fuck! He's trying to steal my decals!
 > Fuck! They're trying to make it look fake! Goddammit!
 > You gotta give!
 > The hat and the cigar. You're driving with the Driving Crooner, baby.
-
----
 
 ## What Is This? Why Do People Hate It?
 
@@ -43,8 +46,6 @@ Ever want to authenticate with Azure in your Go project but MSAL has no examples
 
 Crooner is a Go library for secure, modern Azure AD authentication in Echo web apps. It provides pluggable session management, secure defaults, and easy integration with Azure OIDC/PKCE flows.
 
----
-
 ## Features (Don't Try to Steal My Decals)
 
 - **Azure AD PKCE/OIDC login**
@@ -53,15 +54,11 @@ Crooner is a Go library for secure, modern Azure AD authentication in Echo web a
 - **Secure, non-guessable session cookies**
 - **Designed for Echo, but extensible**
 
----
-
 ## Installation (You Gotta Give!)
 
 ```bash
 go get github.com/catgoose/crooner@latest
 ```
-
----
 
 ## Quick Start Example (You Gotta Be Right Next to Me)
 
@@ -110,7 +107,7 @@ func LoadAppConfig() (*AppConfig, error) {
    Callback: "/callback",
   },
   SecurityHeaders: &crooner.SecurityHeadersConfig{
-   ContentSecurityPolicy:   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://login.microsoftonline.com;",
+   ContentSecurityPolicy:   "img-src 'self' data: https://login.microsoftonline.com;",
    XFrameOptions:           "DENY",
    XContentTypeOptions:     "nosniff",
    ReferrerPolicy:          "strict-origin-when-cross-origin",
@@ -135,7 +132,6 @@ func main() {
 
  e := echo.New()
 
- // --- Session Management with Functional Options ---
  sessionMgr, scsMgr, err := crooner.NewSCSManager(
   crooner.WithPersistentCookieName(appConfig.SessionSecret, appConfig.AppName),
   crooner.WithLifetime(12*time.Hour),
@@ -149,13 +145,11 @@ func main() {
  appConfig.SessionMgr = sessionMgr
  appConfig.CroonerConfig.SessionMgr = sessionMgr
 
- // --- Crooner Auth Setup ---
  ctx := context.Background()
  if err := crooner.NewAuthConfig(ctx, e, appConfig.CroonerConfig); err != nil {
   log.Fatalf("failed to initialize Crooner authentication: %v", err)
  }
 
- // --- Your routes here ---
  e.GET("/", func(c echo.Context) error {
   return c.String(200, "Hello, Crooner!")
  })
@@ -168,8 +162,6 @@ func main() {
  e.Logger.Fatal(e.Start(":" + port))
 }
 ```
-
----
 
 ## Configuration (Don't Let Them Make It Look Fake)
 
@@ -197,7 +189,7 @@ You can configure all major security headers via `SecurityHeadersConfig`. If a f
 params := &crooner.AuthConfigParams{
  // ... other config ...
  SecurityHeaders: &crooner.SecurityHeadersConfig{
-  ContentSecurityPolicy:   "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://login.microsoftonline.com;",
+  ContentSecurityPolicy:   "img-src 'self' data: https://login.microsoftonline.com;",
   XFrameOptions:           "DENY",
   XContentTypeOptions:     "nosniff",
   ReferrerPolicy:          "strict-origin-when-cross-origin",
@@ -209,14 +201,13 @@ params := &crooner.AuthConfigParams{
 
 #### Default Security Header Values
 
-| Header                    | Default Value                     |
-| ------------------------- | --------------------------------- |
-| Content-Security-Policy   | `default-src 'self'`              |
-| X-Frame-Options           | `DENY`                            |
-| X-Content-Type-Options    | `nosniff`                         |
-| Referrer-Policy           | `strict-origin-when-cross-origin` |
-| X-XSS-Protection          | `1; mode=block`                   |
-| Strict-Transport-Security | _(not set by default)_            |
+| Header | Default Value |
+| Content-Security-Policy | `default-src 'self'` |
+| X-Frame-Options | `DENY` |
+| X-Content-Type-Options | `nosniff` |
+| Referrer-Policy | `strict-origin-when-cross-origin` |
+| X-XSS-Protection | `1; mode=block` |
+| Strict-Transport-Security | _(not set by default)_ |
 
 - To override a header, set the corresponding field in `SecurityHeadersConfig`.
 - `Strict-Transport-Security` should only be set if your app is always served over HTTPS.
@@ -227,17 +218,16 @@ Crooner uses idiomatic Go functional options for session configuration. You can 
 
 #### Available Options
 
-| Option                                             | Description                                                                                               |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Option | Description |
 | `WithPersistentCookieName(secret, appName string)` | Sets a non-guessable, persistent cookie name using your secret and app name (recommended for production). |
-| `WithCookieName(name string)`                      | Sets a custom cookie name.                                                                                |
-| `WithCookieDomain(domain string)`                  | Sets the cookie domain.                                                                                   |
-| `WithCookiePath(path string)`                      | Sets the cookie path.                                                                                     |
-| `WithCookieSecure(secure bool)`                    | Sets the Secure flag.                                                                                     |
-| `WithCookieHTTPOnly(httpOnly bool)`                | Sets the HttpOnly flag.                                                                                   |
-| `WithCookieSameSite(sameSite http.SameSite)`       | Sets the SameSite mode.                                                                                   |
-| `WithLifetime(lifetime time.Duration)`             | Sets the session lifetime.                                                                                |
-| `WithStore(store scs.Store)`                       | Sets a custom session store backend (e.g., Redis).                                                        |
+| `WithCookieName(name string)` | Sets a custom cookie name. |
+| `WithCookieDomain(domain string)` | Sets the cookie domain. |
+| `WithCookiePath(path string)` | Sets the cookie path. |
+| `WithCookieSecure(secure bool)` | Sets the Secure flag. |
+| `WithCookieHTTPOnly(httpOnly bool)` | Sets the HttpOnly flag. |
+| `WithCookieSameSite(sameSite http.SameSite)` | Sets the SameSite mode. |
+| `WithLifetime(lifetime time.Duration)` | Sets the session lifetime. |
+| `WithStore(store scs.Store)` | Sets a custom session store backend (e.g., Redis). |
 
 #### Example Usage
 
@@ -256,8 +246,6 @@ if err != nil {
 - You can combine as many options as you need.
 - If you use both `WithPersistentCookieName` and `WithCookieName`, the last one wins.
 - All options have secure defaults if not set.
-
----
 
 ## Advanced Usage (You Gotta Be Right Next to Me)
 
@@ -291,70 +279,70 @@ You can use any backend for session storage by implementing the `SessionManager`
 package myapp
 
 import (
-    "context"
-    "github.com/catgoose/crooner"
-    "github.com/go-redis/redis/v8"
-    "github.com/labstack/echo/v4"
-    "encoding/json"
-    "time"
+ "context"
+ "encoding/json"
+ "github.com/catgoose/crooner"
+ "github.com/go-redis/redis/v8"
+ "github.com/labstack/echo/v4"
+ "time"
 )
 
 type RedisSessionManager struct {
-    Client *redis.Client
-    Prefix string // optional, for namespacing session keys
-    TTL    time.Duration
+ Client *redis.Client
+ Prefix string // optional, for namespacing session keys
+ TTL    time.Duration
 }
 
 func (r *RedisSessionManager) sessionKey(c echo.Context, key string) string {
-    // You can use a cookie, header, or other identifier for session scoping
-    sessionID := c.Request().Header.Get("X-Session-ID") // Example only
-    return r.Prefix + sessionID + ":" + key
+ // You can use a cookie, header, or other identifier for session scoping
+ sessionID := c.Request().Header.Get("X-Session-ID") // Example only
+ return r.Prefix + sessionID + ":" + key
 }
 
 func (r *RedisSessionManager) Get(c echo.Context, key string) (any, error) {
-    ctx := c.Request().Context()
-    val, err := r.Client.Get(ctx, r.sessionKey(c, key)).Result()
-    if err == redis.Nil {
-        return nil, nil
-    } else if err != nil {
-        return nil, err
-    }
-    var result any
-    if err := json.Unmarshal([]byte(val), &result); err != nil {
-        return nil, err
-    }
-    return result, nil
+ ctx := c.Request().Context()
+ val, err := r.Client.Get(ctx, r.sessionKey(c, key)).Result()
+ if err == redis.Nil {
+  return nil, nil
+ } else if err != nil {
+  return nil, err
+ }
+ var result any
+ if err := json.Unmarshal([]byte(val), &result); err != nil {
+  return nil, err
+ }
+ return result, nil
 }
 
 func (r *RedisSessionManager) Set(c echo.Context, key string, value any) error {
-    ctx := c.Request().Context()
-    data, err := json.Marshal(value)
-    if err != nil {
-        return err
-    }
-    return r.Client.Set(ctx, r.sessionKey(c, key), data, r.TTL).Err()
+ ctx := c.Request().Context()
+ data, err := json.Marshal(value)
+ if err != nil {
+  return err
+ }
+ return r.Client.Set(ctx, r.sessionKey(c, key), data, r.TTL).Err()
 }
 
 func (r *RedisSessionManager) Delete(c echo.Context, key string) error {
-    ctx := c.Request().Context()
-    return r.Client.Del(ctx, r.sessionKey(c, key)).Err()
+ ctx := c.Request().Context()
+ return r.Client.Del(ctx, r.sessionKey(c, key)).Err()
 }
 
 func (r *RedisSessionManager) Clear(c echo.Context) error {
-    // Implement logic to clear all session keys for the user/session
-    return nil // Example: not implemented
+ // Implement logic to clear all session keys for the user/session
+ return nil // Example: not implemented
 }
 
 func (r *RedisSessionManager) Invalidate(c echo.Context) error {
-    // Implement logic to invalidate the session (e.g., delete all keys)
-    return nil // Example: not implemented
+ // Implement logic to invalidate the session (e.g., delete all keys)
+ return nil // Example: not implemented
 }
 
 func (r *RedisSessionManager) ClearInvalidate(c echo.Context) error {
-    if err := r.Clear(c); err != nil {
-        return err
-    }
-    return r.Invalidate(c)
+ if err := r.Clear(c); err != nil {
+  return err
+ }
+ return r.Invalidate(c)
 }
 ```
 
@@ -362,34 +350,32 @@ To use your custom Redis session manager with Crooner:
 
 ```go
 import (
-    crooner "github.com/catgoose/crooner"
-    "github.com/go-redis/redis/v8"
-    "github.com/labstack/echo/v4"
-    "time"
+ crooner "github.com/catgoose/crooner"
+ "github.com/go-redis/redis/v8"
+ "github.com/labstack/echo/v4"
+ "time"
 )
 
 func main() {
-    e := echo.New()
-    redisClient := redis.NewClient(&redis.Options{
-        Addr: "localhost:6379",
-        // ...other options...
-    })
-    sessionMgr := &myapp.RedisSessionManager{
-        Client: redisClient,
-        Prefix: "crooner:",
-        TTL:    24 * time.Hour,
-    }
-    croonerConfig := &crooner.AuthConfigParams{
-        // ...other config...
-        SessionMgr: sessionMgr,
-    }
-    // ...rest of your setup...
+ e := echo.New()
+ redisClient := redis.NewClient(&redis.Options{
+  Addr: "localhost:6379",
+  // ...other options...
+ })
+ sessionMgr := &myapp.RedisSessionManager{
+  Client: redisClient,
+  Prefix: "crooner:",
+  TTL:    24 * time.Hour,
+ }
+ croonerConfig := &crooner.AuthConfigParams{
+  // ...other config...
+  SessionMgr: sessionMgr,
+ }
+ // ...rest of your setup...
 }
 ```
 
 This approach allows you to use Redis (or any other backend) for session storage, as long as your implementation satisfies the `SessionManager` interface.
-
----
 
 ## Security Best Practices (Don't Let Them Make It Look Fake)
 
@@ -398,8 +384,6 @@ This approach allows you to use Redis (or any other backend) for session storage
 - Rotate the session secret to force logout of all users
 - Use HTTPS, HttpOnly, SameSite, Secure cookies
 - Configure CSP for your frontend’s needs
-
----
 
 ## Session Lifetime Recommendations (How Long's the Set?)
 
@@ -411,8 +395,6 @@ The session lifetime determines how long a user stays logged in before needing t
 - **7+ days:** Only for "remember me" features (use with caution)
 
 **Shorter lifetimes are more secure, longer lifetimes are more convenient.**
-
-### Examples
 
 ## Setting Session Lifetime
 
@@ -427,6 +409,8 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
+
+### Examples
 
 ## Retrieving the Session Cookie Name
 
@@ -448,34 +432,6 @@ cookieName := sessionMgr.GetCookieName()
 
 This ensures your middleware and other components always use the correct session cookie name, even if it is generated or hashed internally.
 
----
-
-## Contributing (You Gotta Give!)
-
-PRs and issues welcome! Please open an issue to discuss major changes first.
-
----
-
-## License
-
-MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
-
----
-
-## Questions? PRs? Hecklers?
-
-Open an issue, send a PR, or just shout “Crooner!” into the night. We'll hear you. But you gotta be right next to me for it to look real.
-
----
-
-When I was a kid, I fell into a river and a fish bumped me out. I was supposed to die. But a fish bumped me out with its nose. That was the earth telling me I'm supposed to do something great. And I know that's the Driving Crooner. It has to be. You know what I mean, James?
-
----
-
-[Source: ITYSL Driving Crooner Quotes](https://ithinkyoushouldquote.me/sketch/the-driving-crooner/)
-
----
-
 ### Type-Specific Session Helper Functions
 
 Crooner provides type-specific helper functions for retrieving session values in a type-safe way. These helpers work with any implementation of the `SessionManager` interface and return an error if the value is missing or not of the expected type.
@@ -490,18 +446,28 @@ Crooner provides type-specific helper functions for retrieving session values in
 
 ```go
 import (
-    crooner "github.com/catgoose/crooner"
-    "github.com/labstack/echo/v4"
+ crooner "github.com/catgoose/crooner"
+ "github.com/labstack/echo/v4"
 )
 
 func myHandler(c echo.Context) error {
-    // Assume sessionMgr is your SessionManager implementation
-    username, err := crooner.GetString(sessionMgr, c, "username")
-    if err != nil {
-        return c.String(401, "Unauthorized")
-    }
-    return c.String(200, "Hello, "+username)
+ // Assume sessionMgr is your SessionManager implementation
+ username, err := crooner.GetString(sessionMgr, c, "username")
+ if err != nil {
+  return c.String(401, "Unauthorized")
+ }
+ return c.String(200, "Hello, "+username)
 }
 ```
 
 These helpers provide robust error handling and work with any backend that implements the `SessionManager` interface.
+
+## Questions? PRs? Hecklers?
+
+Open an issue, send a PR, or just shout “Crooner!” into the night. We'll hear you. But you gotta be right next to me for it to look real.
+
+When I was a kid, I fell into a river and a fish bumped me out. I was supposed to die. But a fish bumped me out with its nose. That was the earth telling me I'm supposed to do something great. And I know that's the Driving Crooner. It has to be. You know what I mean, James?
+
+## License
+
+MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
