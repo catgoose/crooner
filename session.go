@@ -34,10 +34,6 @@ type SessionManager interface {
 	Invalidate(c echo.Context) error
 	// ClearInvalidate removes all values and invalidates the session (expires cookie)
 	ClearInvalidate(c echo.Context) error
-	// Type-safe helpers
-	GetString(c echo.Context, key string) (string, error)
-	GetInt(c echo.Context, key string) (int, error)
-	GetBool(c echo.Context, key string) (bool, error)
 }
 
 // SCSManager implements SessionManager using SCS (github.com/alexedwards/scs/v2)
@@ -82,11 +78,12 @@ const (
 	ReasonInvalidType = "invalid type"
 )
 
+// Add type-specific helper functions for session value retrieval
 // GetString retrieves a string value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not a string.
-func (s *SCSManager) GetString(c echo.Context, key string) (string, error) {
-	val := s.Session.Get(c.Request().Context(), key)
-	if val == nil {
+func GetString(sm SessionManager, c echo.Context, key string) (string, error) {
+	val, err := sm.Get(c, key)
+	if err != nil {
 		return "", &SessionError{Key: key, Reason: ReasonNotFound}
 	}
 	str, ok := val.(string)
@@ -98,9 +95,9 @@ func (s *SCSManager) GetString(c echo.Context, key string) (string, error) {
 
 // GetInt retrieves an int value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not an int.
-func (s *SCSManager) GetInt(c echo.Context, key string) (int, error) {
-	val := s.Session.Get(c.Request().Context(), key)
-	if val == nil {
+func GetInt(sm SessionManager, c echo.Context, key string) (int, error) {
+	val, err := sm.Get(c, key)
+	if err != nil {
 		return 0, &SessionError{Key: key, Reason: ReasonNotFound}
 	}
 	i, ok := val.(int)
@@ -112,9 +109,9 @@ func (s *SCSManager) GetInt(c echo.Context, key string) (int, error) {
 
 // GetBool retrieves a bool value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not a bool.
-func (s *SCSManager) GetBool(c echo.Context, key string) (bool, error) {
-	val := s.Session.Get(c.Request().Context(), key)
-	if val == nil {
+func GetBool(sm SessionManager, c echo.Context, key string) (bool, error) {
+	val, err := sm.Get(c, key)
+	if err != nil {
 		return false, &SessionError{Key: key, Reason: ReasonNotFound}
 	}
 	b, ok := val.(bool)
