@@ -20,18 +20,26 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Fetch all tags
+        run: git fetch --tags
+
       - name: Get latest tag
         id: get_tag
         run: |
-          git fetch --tags
-          latest_tag=$(git describe --tags --abbrev=0 || echo "v0.0.0")
+          # Get the latest tag in the format X.Y.Z (strip leading v)
+          latest_tag=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n 1 | sed 's/^v//')
+          if [ -z "$latest_tag" ]; then
+            latest_tag="0.0.0"
+          fi
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
 
       - name: Bump minor version
         id: bump_version
         run: |
-          latest=${{ steps.get_tag.outputs.latest_tag }}
-          IFS='.' read -r major minor patch <<<"${latest#v}"
+          latest="${{ steps.get_tag.outputs.latest_tag }}"
+          IFS='.' read -r major minor patch <<<"$latest"
+          if [ -z "$major" ]; then major=0; fi
+          if [ -z "$minor" ]; then minor=0; fi
           minor=$((minor+1))
           new_tag="v$major.$minor.0"
           echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
