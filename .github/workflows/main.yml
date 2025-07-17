@@ -1,13 +1,13 @@
-name: Auto Tag and Release
+name: Auto Tag Minor and Release
 
 on:
   push:
     branches:
       - main
-      
+
 permissions:
   contents: write
-  
+
 jobs:
   tag:
     runs-on: ubuntu-latest
@@ -27,13 +27,13 @@ jobs:
           latest_tag=$(git describe --tags --abbrev=0 || echo "v0.0.0")
           echo "latest_tag=$latest_tag" >> $GITHUB_OUTPUT
 
-      - name: Bump version (patch)
+      - name: Bump minor version
         id: bump_version
         run: |
           latest=${{ steps.get_tag.outputs.latest_tag }}
           IFS='.' read -r major minor patch <<<"${latest#v}"
-          patch=$((patch+1))
-          new_tag="v$major.$minor.$patch"
+          minor=$((minor+1))
+          new_tag="v$major.$minor.0"
           echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
 
       - name: Create tag
