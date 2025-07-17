@@ -283,6 +283,112 @@ if err != nil {
 
 - Implement the `SessionManager` interface for your own backend (e.g., DB, Redis, etc.)
 
+#### Example: Redis Implementation
+
+You can use any backend for session storage by implementing the `SessionManager` interface. Here is a basic example of how you might implement a Redis-backed session manager:
+
+```go
+package myapp
+
+import (
+    "context"
+    "github.com/catgoose/crooner"
+    "github.com/go-redis/redis/v8"
+    "github.com/labstack/echo/v4"
+    "encoding/json"
+    "time"
+)
+
+type RedisSessionManager struct {
+    Client *redis.Client
+    Prefix string // optional, for namespacing session keys
+    TTL    time.Duration
+}
+
+func (r *RedisSessionManager) sessionKey(c echo.Context, key string) string {
+    // You can use a cookie, header, or other identifier for session scoping
+    sessionID := c.Request().Header.Get("X-Session-ID") // Example only
+    return r.Prefix + sessionID + ":" + key
+}
+
+func (r *RedisSessionManager) Get(c echo.Context, key string) (any, error) {
+    ctx := c.Request().Context()
+    val, err := r.Client.Get(ctx, r.sessionKey(c, key)).Result()
+    if err == redis.Nil {
+        return nil, nil
+    } else if err != nil {
+        return nil, err
+    }
+    var result any
+    if err := json.Unmarshal([]byte(val), &result); err != nil {
+        return nil, err
+    }
+    return result, nil
+}
+
+func (r *RedisSessionManager) Set(c echo.Context, key string, value any) error {
+    ctx := c.Request().Context()
+    data, err := json.Marshal(value)
+    if err != nil {
+        return err
+    }
+    return r.Client.Set(ctx, r.sessionKey(c, key), data, r.TTL).Err()
+}
+
+func (r *RedisSessionManager) Delete(c echo.Context, key string) error {
+    ctx := c.Request().Context()
+    return r.Client.Del(ctx, r.sessionKey(c, key)).Err()
+}
+
+func (r *RedisSessionManager) Clear(c echo.Context) error {
+    // Implement logic to clear all session keys for the user/session
+    return nil // Example: not implemented
+}
+
+func (r *RedisSessionManager) Invalidate(c echo.Context) error {
+    // Implement logic to invalidate the session (e.g., delete all keys)
+    return nil // Example: not implemented
+}
+
+func (r *RedisSessionManager) ClearInvalidate(c echo.Context) error {
+    if err := r.Clear(c); err != nil {
+        return err
+    }
+    return r.Invalidate(c)
+}
+```
+
+To use your custom Redis session manager with Crooner:
+
+```go
+import (
+    crooner "github.com/catgoose/crooner"
+    "github.com/go-redis/redis/v8"
+    "github.com/labstack/echo/v4"
+    "time"
+)
+
+func main() {
+    e := echo.New()
+    redisClient := redis.NewClient(&redis.Options{
+        Addr: "localhost:6379",
+        // ...other options...
+    })
+    sessionMgr := &myapp.RedisSessionManager{
+        Client: redisClient,
+        Prefix: "crooner:",
+        TTL:    24 * time.Hour,
+    }
+    croonerConfig := &crooner.AuthConfigParams{
+        // ...other config...
+        SessionMgr: sessionMgr,
+    }
+    // ...rest of your setup...
+}
+```
+
+This approach allows you to use Redis (or any other backend) for session storage, as long as your implementation satisfies the `SessionManager` interface.
+
 ---
 
 ## Security Best Practices (Don't Let Them Make It Look Fake)
@@ -367,3 +473,35 @@ When I was a kid, I fell into a river and a fish bumped me out. I was supposed t
 ---
 
 [Source: ITYSL Driving Crooner Quotes](https://ithinkyoushouldquote.me/sketch/the-driving-crooner/)
+
+---
+
+### Type-Specific Session Helper Functions
+
+Crooner provides type-specific helper functions for retrieving session values in a type-safe way. These helpers work with any implementation of the `SessionManager` interface and return an error if the value is missing or not of the expected type.
+
+#### Available Helpers
+
+- `GetString(sm SessionManager, c echo.Context, key string) (string, error)`
+- `GetInt(sm SessionManager, c echo.Context, key string) (int, error)`
+- `GetBool(sm SessionManager, c echo.Context, key string) (bool, error)`
+
+#### Usage Example
+
+```go
+import (
+    crooner "github.com/catgoose/crooner"
+    "github.com/labstack/echo/v4"
+)
+
+func myHandler(c echo.Context) error {
+    // Assume sessionMgr is your SessionManager implementation
+    username, err := crooner.GetString(sessionMgr, c, "username")
+    if err != nil {
+        return c.String(401, "Unauthorized")
+    }
+    return c.String(200, "Hello, "+username)
+}
+```
+
+These helpers provide robust error handling and work with any backend that implements the `SessionManager` interface.

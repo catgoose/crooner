@@ -29,15 +29,7 @@ func (e *SessionError) Error() string {
 
 // getSessionString retrieves a string from the session or returns a SessionError.
 func (a *AuthHandlerConfig) getSessionString(c echo.Context, key string) (string, error) {
-	val, err := a.SessionMgr.Get(c, key)
-	if err != nil {
-		return "", &SessionError{Key: key, Reason: "not found"}
-	}
-	str, ok := val.(string)
-	if !ok {
-		return "", &SessionError{Key: key, Reason: "not a string"}
-	}
-	return str, nil
+	return GetString(a.SessionMgr, c, key)
 }
 
 // authMiddleware generates a middleware to enforce authentication based on session data
