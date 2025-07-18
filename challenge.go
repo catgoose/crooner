@@ -3,6 +3,7 @@ package crooner
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 
 	"crypto/rand"
@@ -19,6 +20,21 @@ func (e *ChallengeError) Error() string {
 }
 
 func (e *ChallengeError) Unwrap() error { return e.Err }
+
+// IsChallengeError checks if an error is a ChallengeError
+func IsChallengeError(err error) bool {
+	var challengeErr *ChallengeError
+	return errors.As(err, &challengeErr)
+}
+
+// AsChallengeError attempts to convert an error to ChallengeError
+func AsChallengeError(err error) (*ChallengeError, bool) {
+	var challengeErr *ChallengeError
+	if errors.As(err, &challengeErr) {
+		return challengeErr, true
+	}
+	return nil, false
+}
 
 // GenerateCodeChallenge generates a SHA256 code challenge from the verifier
 func GenerateCodeChallenge(verifier string) string {

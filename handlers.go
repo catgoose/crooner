@@ -17,16 +17,6 @@ type AuthHandlerConfig struct {
 	SessionMgr         SessionManager // Use interface for all session operations
 }
 
-// SessionError represents an error related to session operations.
-type SessionError struct {
-	Key    string // The session key involved
-	Reason string // A human-readable reason for the error
-}
-
-func (e *SessionError) Error() string {
-	return fmt.Sprintf("session error for key %q: %s", e.Key, e.Reason)
-}
-
 // getSessionString retrieves a string from the session or returns a SessionError.
 func (a *AuthHandlerConfig) getSessionString(c echo.Context, key string) (string, error) {
 	return GetString(a.SessionMgr, c, key)
@@ -41,7 +31,7 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 			}
 
 			// Retrieve and validate session
-			if _, err := a.getSessionString(c, "user"); err != nil {
+			if _, err := a.getSessionString(c, SessionKeyUser); err != nil {
 				return c.Redirect(http.StatusFound, routes.Login)
 			}
 
@@ -71,7 +61,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		}
 
 		// Store state in session
-		if err := a.SessionMgr.Set(c, "oauth_state", state); err != nil {
+		if err := a.SessionMgr.Set(c, SessionKeyOAuthState, state); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 
@@ -81,7 +71,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		}
 		codeChallenge := GenerateCodeChallenge(codeVerifier)
 		// Save code verifier in session
-		if err := a.SessionMgr.Set(c, "code_verifier", codeVerifier); err != nil {
+		if err := a.SessionMgr.Set(c, SessionKeyCodeVerifier, codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		loginURL := a.AuthConfig.GetLoginURL(state, codeChallenge)
@@ -92,7 +82,7 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 // callbackHandler creates a handler function for the callback route
 func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		expectedState, err := a.getSessionString(c, "oauth_state")
+		expectedState, err := a.getSessionString(c, SessionKeyOAuthState)
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
 		}
@@ -104,11 +94,11 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		}
 
 		// Clear state from session
-		if err := a.SessionMgr.Delete(c, "oauth_state"); err != nil {
+		if err := a.SessionMgr.Delete(c, SessionKeyOAuthState); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear state from session", err)
 		}
 
-		codeVerifier, err := a.getSessionString(c, "code_verifier")
+		codeVerifier, err := a.getSessionString(c, SessionKeyCodeVerifier)
 		if err != nil {
 			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", err)
 		}
@@ -128,7 +118,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
-		if err := a.SessionMgr.Set(c, "user", claims["email"]); err != nil {
+		if err := a.SessionMgr.Set(c, SessionKeyUser, claims["email"]); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		if a.SessionValueClaims != nil {

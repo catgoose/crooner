@@ -2,6 +2,7 @@ package crooner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -44,6 +45,36 @@ func (e *ConfigError) Error() string {
 }
 
 func (e *ConfigError) Unwrap() error { return e.Err }
+
+// IsAuthError checks if an error is an AuthError
+func IsAuthError(err error) bool {
+	var authErr *AuthError
+	return errors.As(err, &authErr)
+}
+
+// AsAuthError attempts to convert an error to AuthError
+func AsAuthError(err error) (*AuthError, bool) {
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		return authErr, true
+	}
+	return nil, false
+}
+
+// IsConfigError checks if an error is a ConfigError
+func IsConfigError(err error) bool {
+	var configErr *ConfigError
+	return errors.As(err, &configErr)
+}
+
+// AsConfigError attempts to convert an error to ConfigError
+func AsConfigError(err error) (*ConfigError, bool) {
+	var configErr *ConfigError
+	if errors.As(err, &configErr) {
+		return configErr, true
+	}
+	return nil, false
+}
 
 // SessionSecurityConfig contains session security configuration
 type SessionSecurityConfig struct {
