@@ -12,6 +12,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	http "net/http"
 	"time"
@@ -72,13 +73,62 @@ func (s *SCSManager) ClearInvalidate(c echo.Context) error {
 	return s.Invalidate(c)
 }
 
+// SessionError represents an error related to session operations.
+type SessionError struct {
+	Key    string // The session key involved
+	Reason string // A human-readable reason for the error
+}
+
+func (e *SessionError) Error() string {
+	return fmt.Sprintf("session error for key %q: %s", e.Key, e.Reason)
+}
+
+// Unwrap returns nil since SessionError doesn't wrap another error
+func (e *SessionError) Unwrap() error { return nil }
+
+// IsSessionError checks if an error is a SessionError
+func IsSessionError(err error) bool {
+	var sessionErr *SessionError
+	return errors.As(err, &sessionErr)
+}
+
+// AsSessionError attempts to convert an error to SessionError
+func AsSessionError(err error) (*SessionError, bool) {
+	var sessionErr *SessionError
+	if errors.As(err, &sessionErr) {
+		return sessionErr, true
+	}
+	return nil, false
+}
+
+// SessionErrorResponse creates a JSON-friendly response from a SessionError
+func SessionErrorResponse(err error) map[string]any {
+	if sessionErr, ok := AsSessionError(err); ok {
+		return map[string]any{
+			"error":  "session_error",
+			"key":    sessionErr.Key,
+			"reason": sessionErr.Reason,
+		}
+	}
+	return map[string]any{
+		"error":   "unknown_error",
+		"message": err.Error(),
+	}
+}
+
 // Standard reasons for SessionError.
 const (
 	ReasonNotFound    = "not found"
 	ReasonInvalidType = "invalid type"
 )
 
-// Add type-specific helper functions for session value retrieval
+// Common session key constants for consistency
+const (
+	SessionKeyUser         = "user"
+	SessionKeyOAuthState   = "oauth_state"
+	SessionKeyCodeVerifier = "code_verifier"
+)
+
 // GetString retrieves a string value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not a string.
 func GetString(sm SessionManager, c echo.Context, key string) (string, error) {
@@ -221,6 +271,9 @@ func NewSCSManagerWithConfig(cfg SessionConfig) (*SCSManager, *scs.SessionManage
 	if cfg.CookieName == "" {
 		return nil, nil, fmt.Errorf("you must set CookieName in SessionConfig")
 	}
+	if cfg.Lifetime <= 0 {
+		return nil, nil, fmt.Errorf("lifetime must be greater than 0")
+	}
 	scsMgr := scs.New()
 	scsMgr.Cookie.Name = cfg.CookieName
 	scsMgr.Cookie.HttpOnly = cfg.CookieHTTPOnly
@@ -288,4 +341,10 @@ func randomSuffix() string {
 // GetCookieName returns the session cookie name used by this manager.
 func (s *SCSManager) GetCookieName() string {
 	return s.cookieName
+}
+
+// GetSCSManager returns the underlying SCS session manager for advanced usage.
+// This allows users to access SCS-specific features when needed.
+func (s *SCSManager) GetSCSManager() *scs.SessionManager {
+	return s.Session
 }
