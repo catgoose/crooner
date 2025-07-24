@@ -208,13 +208,14 @@ params := &crooner.AuthConfigParams{
 
 #### Default Security Header Values
 
-| Header | Default Value |
-| Content-Security-Policy | `default-src 'self'` |
-| X-Frame-Options | `DENY` |
-| X-Content-Type-Options | `nosniff` |
-| Referrer-Policy | `strict-origin-when-cross-origin` |
-| X-XSS-Protection | `1; mode=block` |
-| Strict-Transport-Security | _(not set by default)_ |
+| Header                     | Default Value                      |
+|----------------------------|------------------------------------|
+| Content-Security-Policy    | `default-src 'self'`               |
+| X-Frame-Options            | `DENY`                             |
+| X-Content-Type-Options     | `nosniff`                          |
+| Referrer-Policy            | `strict-origin-when-cross-origin`  |
+| X-XSS-Protection           | `1; mode=block`                    |
+| Strict-Transport-Security  | _(not set by default)_             |
 
 - To override a header, set the corresponding field in `SecurityHeadersConfig`.
 - `Strict-Transport-Security` should only be set if your app is always served over HTTPS.
@@ -470,15 +471,6 @@ func myHandler(c echo.Context) error {
 
 These helpers provide robust error handling and work with any backend that implements the `SessionManager` interface.
 
-## Questions? PRs? Hecklers?
-
-Open an issue, send a PR, or just shout “Crooner!” into the night. We'll hear you. But you gotta be right next to me for it to look real.
-
-When I was a kid, I fell into a river and a fish bumped me out. I was supposed to die. But a fish bumped me out with its nose. That was the earth telling me I'm supposed to do something great. And I know that's the Driving Crooner. It has to be. You know what I mean, James?
-
-## License
-
-MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
 
 ## Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)
 
@@ -508,3 +500,14 @@ If you hit a pothole (like a live reload), Crooner just restarts the login flow.
 #### Note for Development (Don’t Let the Session Look Fake)
 
 If you’re using an in-memory session store and you restart the server, your session’s gone. But Crooner’s got you: he’ll just restart the login flow and keep you moving. For production, use a persistent session store (Redis, SQLite, whatever keeps your decals safe).
+
+
+## Questions? PRs? Hecklers?
+
+Open an issue, send a PR, or just shout “Crooner!” into the night. We'll hear you. But you gotta be right next to me for it to look real.
+
+When I was a kid, I fell into a river and a fish bumped me out. I was supposed to die. But a fish bumped me out with its nose. That was the earth telling me I'm supposed to do something great. And I know that's the Driving Crooner. It has to be. You know what I mean, James?
+
+## License
+
+MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
