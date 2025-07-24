@@ -6,7 +6,6 @@
 ![image](https://github.com/catgoose/screenshots/blob/fb17ed7cd8e989691447b0e7a755d93a677abbfd/crooner/crooner.png)
 
 <!--toc:start-->
-
 - [🎩 Crooner: You Gotta Be Right Next to Me for It to Look Real, Baby](#🎩-crooner-you-gotta-be-right-next-to-me-for-it-to-look-real-baby)
   - [What Is This? Why Do People Hate It?](#what-is-this-why-do-people-hate-it)
   - [Features (Don't Try to Steal My Decals)](#features-dont-try-to-steal-my-decals)
@@ -32,7 +31,11 @@
       - [Usage Example](#usage-example)
   - [Questions? PRs? Hecklers?](#questions-prs-hecklers)
   - [License](#license)
-  <!--toc:end-->
+  - [Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)](#driving-crooner-authentication-flow-dont-let-them-make-it-look-fake)
+    - [How the Crooner Keeps You on the Road](#how-the-crooner-keeps-you-on-the-road)
+      - [Example: The Real Crooner Flow](#example-the-real-crooner-flow)
+      - [Note for Development (Don’t Let the Session Look Fake)](#note-for-development-dont-let-the-session-look-fake)
+<!--toc:end-->
 
 > Fuck! He's trying to steal my decals!
 > Fuck! They're trying to make it look fake! Goddammit!
@@ -222,16 +225,17 @@ Crooner uses idiomatic Go functional options for session configuration. You can 
 
 #### Available Options
 
-| Option | Description |
+| Option                                             | Description                                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `WithPersistentCookieName(secret, appName string)` | Sets a non-guessable, persistent cookie name using your secret and app name (recommended for production). |
-| `WithCookieName(name string)` | Sets a custom cookie name. |
-| `WithCookieDomain(domain string)` | Sets the cookie domain. |
-| `WithCookiePath(path string)` | Sets the cookie path. |
-| `WithCookieSecure(secure bool)` | Sets the Secure flag. |
-| `WithCookieHTTPOnly(httpOnly bool)` | Sets the HttpOnly flag. |
-| `WithCookieSameSite(sameSite http.SameSite)` | Sets the SameSite mode. |
-| `WithLifetime(lifetime time.Duration)` | Sets the session lifetime. |
-| `WithStore(store scs.Store)` | Sets a custom session store backend (e.g., Redis). |
+| `WithCookieName(name string)`                      | Sets a custom cookie name.                                                                                |
+| `WithCookieDomain(domain string)`                  | Sets the cookie domain.                                                                                   |
+| `WithCookiePath(path string)`                      | Sets the cookie path.                                                                                     |
+| `WithCookieSecure(secure bool)`                    | Sets the Secure flag.                                                                                     |
+| `WithCookieHTTPOnly(httpOnly bool)`                | Sets the HttpOnly flag.                                                                                   |
+| `WithCookieSameSite(sameSite http.SameSite)`       | Sets the SameSite mode.                                                                                   |
+| `WithLifetime(lifetime time.Duration)`             | Sets the session lifetime.                                                                                |
+| `WithStore(store scs.Store)`                       | Sets a custom session store backend (e.g., Redis).                                                        |
 
 #### Example Usage
 
