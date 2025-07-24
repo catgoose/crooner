@@ -1,6 +1,7 @@
 package crooner
 
 import (
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -32,7 +33,9 @@ func (a *AuthHandlerConfig) authMiddleware(routes *AuthRoutes) echo.MiddlewareFu
 
 			// Retrieve and validate session
 			if _, err := a.getSessionString(c, SessionKeyUser); err != nil {
-				return c.Redirect(http.StatusFound, routes.Login)
+				// Preserve full URI (path + query) in login redirect
+				loginURL := fmt.Sprintf("%s?redirect=%s", routes.Login, url.QueryEscape(c.Request().RequestURI))
+				return c.Redirect(http.StatusFound, loginURL)
 			}
 
 			return next(c)
@@ -54,11 +57,20 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 // loginHandler creates a handler function for the login route
 func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
-		// Generate secure state parameter
-		state, err := GenerateState()
+		// Generate secure state parameter (for CSRF)
+		csrfState, err := GenerateState()
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to generate state", err)
 		}
+
+		// Capture original URI (path + query) to redirect back to post-auth
+		originalPath := c.QueryParam("redirect")
+		if originalPath == "" {
+			originalPath = c.Request().RequestURI // Use full URI (path + query)
+		}
+		// Encode CSRF + original path in state (base64 for simplicity; use JSON/nonce if needed)
+		stateData := fmt.Sprintf("%s|%s", csrfState, originalPath)
+		state := base64.StdEncoding.EncodeToString([]byte(stateData))
 
 		// Store state in session
 		if err := a.SessionMgr.Set(c, SessionKeyOAuthState, state); err != nil {
@@ -90,7 +102,24 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		// Validate state parameter
 		receivedState := c.QueryParam("state")
 		if receivedState != expectedState {
-			return a.handleError(c, http.StatusBadRequest, "Invalid state parameter", nil)
+			// Start a new login flow, preserving the original request if possible
+			loginURL := fmt.Sprintf("%s?redirect=%s", a.AuthConfig.AuthRoutes.Login, url.QueryEscape(c.Request().RequestURI))
+			return c.Redirect(http.StatusFound, loginURL)
+		}
+
+		// Decode state to get CSRF + original path
+		stateBytes, err := base64.StdEncoding.DecodeString(expectedState)
+		if err != nil {
+			return a.handleError(c, http.StatusBadRequest, "Invalid state format", err)
+		}
+		stateParts := strings.SplitN(string(stateBytes), "|", 2)
+		if len(stateParts) != 2 {
+			return a.handleError(c, http.StatusBadRequest, "Invalid state data", nil)
+		}
+		// csrfState := stateParts[0] // Optionally validate further if needed
+		originalPath := stateParts[1]
+		if originalPath == "" {
+			originalPath = "/" // Fallback if not set
 		}
 
 		// Clear state from session
@@ -141,7 +170,8 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 				}
 			}
 		}
-		return c.Redirect(http.StatusFound, a.AuthConfig.LoginURLRedirect)
+		// Redirect to original path instead of fixed LoginURLRedirect
+		return c.Redirect(http.StatusFound, originalPath)
 	}
 }
 

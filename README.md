@@ -54,6 +54,9 @@ Crooner is a Go library for secure, modern Azure AD authentication in Echo web a
 - **Configurable Content Security Policy (CSP)**
 - **Secure, non-guessable session cookies**
 - **Designed for Echo, but extensible**
+- **Preserves original URLs (including query strings) through login and callback**
+- **Reverse proxy friendly authentication flow**
+- **Automatic recovery from lost session state (e.g., after server restart)**
 
 ## Installation (You Gotta Give!)
 
@@ -472,3 +475,32 @@ When I was a kid, I fell into a river and a fish bumped me out. I was supposed t
 ## License
 
 MIT, baby! Use it, fork it, remix it—just don't try to make it look fake.
+
+## Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)
+
+You ever try to log in behind a reverse proxy and it just dumps you on the wrong page? Not with the Driving Crooner, baby. This authentication flow is so real, it’ll keep your decals safe and your redirects looking legit—even if some guy in a hot dog suit is trying to make it look fake.
+
+### How the Crooner Keeps You on the Road
+
+1. **You try to visit a protected page**
+   - The Crooner checks your credentials. If you’re not logged in, he throws you in the sidecar and redirects you to `/login?redirect=<your real destination, decals and all>`. That means the full path, query string, the works. No fake detours.
+2. **Login Handler: The Hat and the Cigar**
+   - Crooner encodes a secret state and your original destination into a base64-encoded package, stashes it in your session, and sends you off to the OAuth provider. Nobody’s stealing your spot in line.
+3. **Callback: You Gotta Be Right Next to Me**
+   - After you sign in, the OAuth provider sends you back to `/callback` with your state. Crooner decodes it, checks your credentials, and puts you right back where you started—no matter how many fake login pages you drove through.
+4. **If the Session’s Gone (You Hit a Pothole)**
+   - Maybe you live reloaded, maybe the server restarted, maybe you just got bumped out by a fish. If the session state is missing or doesn’t match, Crooner doesn’t freak out. He just restarts the login flow, keeping your original destination safe. No “Invalid state” errors, no fake-outs.
+
+#### Example: The Real Crooner Flow
+
+1. You hit `/dashboard?id=42` (not logged in)
+2. Crooner sends you to `/login?redirect=/dashboard?id=42` (decals intact)
+3. You get sent to the OAuth provider with a state that’s got your back
+4. After login, you’re back at `/callback?...&state=...`
+5. Crooner decodes the state and puts you right back at `/dashboard?id=42`—no detours, no fake logins
+
+If you hit a pothole (like a live reload), Crooner just restarts the login flow. You never see an error, you never lose your place. That’s the real deal.
+
+#### Note for Development (Don’t Let the Session Look Fake)
+
+If you’re using an in-memory session store and you restart the server, your session’s gone. But Crooner’s got you: he’ll just restart the login flow and keep you moving. For production, use a persistent session store (Redis, SQLite, whatever keeps your decals safe).
