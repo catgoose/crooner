@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/coreos/go-oidc"
@@ -16,9 +17,9 @@ import (
 
 // AuthError represents an error related to authentication or OIDC operations.
 type AuthError struct {
-	Op     string // Operation (e.g., "ExchangeToken", "VerifyIDToken")
-	Reason string // Human-readable reason
-	Err    error  // Underlying error, if any
+	Err    error
+	Op     string
+	Reason string
 }
 
 func (e *AuthError) Error() string {
@@ -32,9 +33,9 @@ func (e *AuthError) Unwrap() error { return e.Err }
 
 // ConfigError represents an error related to configuration loading or validation.
 type ConfigError struct {
-	Field  string // The config field or env var involved
-	Reason string // Human-readable reason
-	Err    error  // Underlying error, if any
+	Err    error
+	Field  string
+	Reason string
 }
 
 func (e *ConfigError) Error() string {
@@ -78,12 +79,12 @@ func AsConfigError(err error) (*ConfigError, bool) {
 
 // SessionSecurityConfig contains session security configuration
 type SessionSecurityConfig struct {
-	HTTPOnly bool
-	Secure   bool
-	SameSite http.SameSite
-	MaxAge   int
 	Domain   string
 	Path     string
+	SameSite http.SameSite
+	MaxAge   int
+	HTTPOnly bool
+	Secure   bool
 }
 
 // URLValidationConfig contains URL validation configuration
@@ -95,8 +96,8 @@ type URLValidationConfig struct {
 
 // ErrorConfig contains error handling configuration
 type ErrorConfig struct {
-	ShowDetails bool
 	LogLevel    string
+	ShowDetails bool
 }
 
 // SecurityHeadersConfig contains configuration for security headers.
@@ -118,17 +119,7 @@ type SecurityHeadersConfig struct {
 	StrictTransportSecurity string // Strict-Transport-Security header (set only if HTTPS)
 }
 
-// Error constants for consistent error messages
-const (
-	ErrGenericAuth       = "Authentication error occurred"
-	ErrInvalidState      = "Invalid authentication state"
-	ErrTokenExchange     = "Token exchange failed"
-	ErrTokenVerification = "Token verification failed"
-	ErrSessionError      = "Session error occurred"
-	ErrInvalidRedirect   = "Invalid redirect URL"
-)
-
-// AuthConfig contains the configuration for Azure AD authentication
+// AuthConfig is the runtime config built by NewAuthConfig; it holds OAuth2/OIDC and security settings.
 type AuthConfig struct {
 	OAuth2Config      *oauth2.Config         // OAuth2 configuration
 	Provider          *oidc.Provider         // OIDC Provider for Azure AD
@@ -136,31 +127,33 @@ type AuthConfig struct {
 	AuthRoutes        *AuthRoutes            // Routes for authentication
 	TenantID          string                 // Azure AD Tenant ID
 	LogoutURLRedirect string                 // URL to redirect after logout
-	LoginURLRedirect  string                 // URL to redirect after login
-	CookieName        string                 // Key for the session cookie
-	SessionSecurity   *SessionSecurityConfig // Session security configuration
+	LoginURLRedirect  string                 // URL to redirect after login (fallback when state decode fails)
+	CookieName        string                 // Reserved for custom SessionManager; built-in flow uses SessionManager.GetCookieName()
+	SessionSecurity   *SessionSecurityConfig // Reserved for custom SessionManager; built-in flow uses SessionConfig
 	URLValidation     *URLValidationConfig   // URL validation configuration
 	ErrorConfig       *ErrorConfig           // Error handling configuration
 	SecurityHeaders   *SecurityHeadersConfig // Security headers configuration
+	UserClaim         string                 // Claim name for session user (default "email"); use "preferred_username" or "upn" if email absent
 }
 
-// AuthConfigParams contains the parameters needed to configure Azure AD authentication
+// AuthConfigParams is the input for NewAuthConfig; do not reuse as runtime config.
 type AuthConfigParams struct {
-	ClientID           string                 // Azure AD Client ID
-	ClientSecret       string                 // Azure AD Client Secret
-	TenantID           string                 // Azure AD Tenant ID
-	RedirectURL        string                 // URL to redirect after login
-	LogoutURLRedirect  string                 // URL to redirect after logout
-	LoginURLRedirect   string                 // URL to redirect after login
-	AuthRoutes         *AuthRoutes            // Routes for authentication
-	AdditionalScopes   []string               // Additional scopes to request during authentication
-	SessionValueClaims []map[string]string    // Map of session values to claims to store in session.  Use c.get("value") to retrieve claim
-	CookieName         string                 // Key for the session cookie
-	SessionSecurity    *SessionSecurityConfig // Session security configuration
-	URLValidation      *URLValidationConfig   // URL validation configuration
-	ErrorConfig        *ErrorConfig           // Error handling configuration
-	SecurityHeaders    *SecurityHeadersConfig // Security headers configuration
-	SessionMgr         SessionManager         // Pluggable session manager (SCS, etc.)
+	SessionMgr         SessionManager
+	AuthRoutes         *AuthRoutes
+	SecurityHeaders    *SecurityHeadersConfig
+	ErrorConfig        *ErrorConfig
+	URLValidation      *URLValidationConfig
+	SessionSecurity    *SessionSecurityConfig
+	LogoutURLRedirect  string
+	CookieName         string
+	LoginURLRedirect   string
+	ClientID           string
+	RedirectURL        string
+	TenantID           string
+	ClientSecret       string
+	UserClaim          string
+	AdditionalScopes   []string
+	SessionValueClaims []map[string]string
 }
 
 // AuthRoutes contains the routes for authentication
@@ -169,6 +162,29 @@ type AuthRoutes struct {
 	Logout     string   // Logout route
 	Callback   string   // Callback route for receiving authorization code
 	AuthExempt []string // Routes to be exempt from auth
+}
+
+// IsAuthExemptPath reports whether path is an auth route or listed in AuthExempt (prefix match).
+func IsAuthExemptPath(path string, routes *AuthRoutes) bool {
+	if routes == nil {
+		return false
+	}
+	if strings.HasPrefix(path, routes.Login) ||
+		strings.HasPrefix(path, routes.Callback) ||
+		strings.HasPrefix(path, routes.Logout) {
+		return true
+	}
+	for _, route := range routes.AuthExempt {
+		if strings.HasPrefix(path, route) {
+			return true
+		}
+	}
+	return false
+}
+
+// loginRedirectURL constructs a login URL with redirect parameter.
+func loginRedirectURL(routes *AuthRoutes, uri string) string {
+	return fmt.Sprintf("%s?redirect=%s", routes.Login, url.QueryEscape(uri))
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters.
@@ -211,6 +227,9 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 			ContentSecurityPolicy: "default-src 'self'",
 		}
 	}
+	if params.UserClaim == "" {
+		params.UserClaim = "email"
+	}
 
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
@@ -231,6 +250,7 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		URLValidation:     params.URLValidation,
 		ErrorConfig:       params.ErrorConfig,
 		SecurityHeaders:   params.SecurityHeaders,
+		UserClaim:         params.UserClaim,
 	}
 	authHandlerConfig := &AuthHandlerConfig{
 		AuthConfig:         authConfig,
@@ -244,6 +264,22 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 // validateAuthParams ensures all necessary parameters are provided and valid.
 // Returns a ConfigError if any parameter is missing or invalid.
 func validateAuthParams(params *AuthConfigParams) error {
+	if err := validateRequiredAuthParams(params); err != nil {
+		return err
+	}
+	if err := validateRedirectURLParams(params); err != nil {
+		return err
+	}
+	if err := validateAuthRoutes(params); err != nil {
+		return err
+	}
+	if err := validateAdditionalScopes(params); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRequiredAuthParams(params *AuthConfigParams) error {
 	if params.TenantID == "" {
 		return &ConfigError{Field: "TenantID", Reason: "missing required parameter"}
 	}
@@ -259,28 +295,37 @@ func validateAuthParams(params *AuthConfigParams) error {
 	if params.ClientSecret == "" {
 		return &ConfigError{Field: "ClientSecret", Reason: "missing required parameter"}
 	}
-	if params.RedirectURL == "" {
-		return &ConfigError{Field: "RedirectURL", Reason: "missing required parameter"}
+	return nil
+}
+
+func validateRedirectURLParams(params *AuthConfigParams) error {
+	redirects := []struct {
+		field string
+		url   string
+	}{
+		{"RedirectURL", params.RedirectURL},
+		{"LogoutURLRedirect", params.LogoutURLRedirect},
+		{"LoginURLRedirect", params.LoginURLRedirect},
 	}
-	if err := validateURL(params.RedirectURL); err != nil {
-		return &ConfigError{Field: "RedirectURL", Reason: "invalid URL", Err: err}
+	for _, r := range redirects {
+		if r.url == "" {
+			return &ConfigError{Field: r.field, Reason: "missing required parameter"}
+		}
+		if err := ValidateRedirectURL(r.url, params.URLValidation); err != nil {
+			return &ConfigError{Field: r.field, Reason: "invalid URL", Err: err}
+		}
 	}
-	if params.LogoutURLRedirect == "" {
-		return &ConfigError{Field: "LogoutURLRedirect", Reason: "missing required parameter"}
-	}
-	if err := validateURL(params.LogoutURLRedirect); err != nil {
-		return &ConfigError{Field: "LogoutURLRedirect", Reason: "invalid URL", Err: err}
-	}
-	if params.LoginURLRedirect == "" {
-		return &ConfigError{Field: "LoginURLRedirect", Reason: "missing required parameter"}
-	}
-	if err := validateURL(params.LoginURLRedirect); err != nil {
-		return &ConfigError{Field: "LoginURLRedirect", Reason: "invalid URL", Err: err}
-	}
+	return nil
+}
+
+func validateAuthRoutes(params *AuthConfigParams) error {
 	if params.AuthRoutes == nil || params.AuthRoutes.Login == "" || params.AuthRoutes.Logout == "" || params.AuthRoutes.Callback == "" {
 		return &ConfigError{Field: "AuthRoutes", Reason: "missing required auth routes: Login, Logout, Callback must be defined"}
 	}
-	// Validate AdditionalScopes (optional, but should be non-empty strings)
+	return nil
+}
+
+func validateAdditionalScopes(params *AuthConfigParams) error {
 	for i, scope := range params.AdditionalScopes {
 		if strings.TrimSpace(scope) == "" {
 			return &ConfigError{Field: fmt.Sprintf("AdditionalScopes[%d]", i), Reason: "scope cannot be empty"}
@@ -295,7 +340,6 @@ func isValidUUID(uuid string) bool {
 		return false
 	}
 
-	// Simple UUID format validation (8-4-4-4-12)
 	parts := strings.Split(uuid, "-")
 	if len(parts) != 5 {
 		return false
@@ -305,7 +349,6 @@ func isValidUUID(uuid string) bool {
 		return false
 	}
 
-	// Check if all characters are hexadecimal
 	validChars := "0123456789abcdefABCDEF"
 	for _, part := range parts {
 		for _, char := range part {
@@ -328,11 +371,40 @@ func validateURL(urlStr string) error {
 		return fmt.Errorf("invalid URL format")
 	}
 
-	// Only allow HTTP and HTTPS schemes by default
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("scheme %s not allowed", parsed.Scheme)
 	}
 
+	return nil
+}
+
+// ValidateRedirectURL validates a redirect URL: format/scheme/host first (via validateURL), then optional URLValidationConfig (RequireHTTPS, AllowedSchemes, AllowedDomains).
+func ValidateRedirectURL(rawURL string, uv *URLValidationConfig) error {
+	if err := validateURL(rawURL); err != nil {
+		return fmt.Errorf("invalid URL format: %w", err)
+	}
+	parsedURL, _ := url.Parse(rawURL) // already validated
+	if uv == nil {
+		return nil
+	}
+	if uv.RequireHTTPS && parsedURL.Scheme != "https" {
+		return fmt.Errorf("HTTPS required for redirect URLs")
+	}
+	if len(uv.AllowedSchemes) > 0 && !slices.Contains(uv.AllowedSchemes, parsedURL.Scheme) {
+		return fmt.Errorf("scheme %s not allowed", parsedURL.Scheme)
+	}
+	if len(uv.AllowedDomains) > 0 {
+		domainAllowed := false
+		for _, domain := range uv.AllowedDomains {
+			if parsedURL.Host == domain || strings.HasSuffix(parsedURL.Host, "."+domain) {
+				domainAllowed = true
+				break
+			}
+		}
+		if !domainAllowed {
+			return fmt.Errorf("domain %s not allowed", parsedURL.Host)
+		}
+	}
 	return nil
 }
 

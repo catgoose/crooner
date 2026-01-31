@@ -1,18 +1,17 @@
 package crooner
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
-
-	"crypto/rand"
 )
 
 // ChallengeError represents an error during PKCE challenge or state generation.
 type ChallengeError struct {
-	Op  string // Operation (e.g., "GenerateCodeVerifier", "GenerateState")
-	Err error  // Underlying error
+	Err error
+	Op  string
 }
 
 func (e *ChallengeError) Error() string {
