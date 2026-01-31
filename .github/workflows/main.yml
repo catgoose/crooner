@@ -40,7 +40,7 @@ jobs:
       - name: Get latest Go version
         id: go
         run: |
-          version=$(curl -sL https://go.dev/VERSION?m=text | sed 's/^go//')
+          version=$(curl -sL https://go.dev/dl/?mode=json | jq -r '.[0].version' | sed 's/^go//')
           echo "version=$version" >> $GITHUB_OUTPUT
 
       - name: Upgrade Go version
