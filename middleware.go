@@ -11,11 +11,11 @@ type securityHeaderSpec struct {
 }
 
 var securityHeaderSpecs = []securityHeaderSpec{
-	{"Content-Security-Policy", "default-src 'self'", func(h *SecurityHeadersConfig) string { return h.ContentSecurityPolicy }},
-	{"X-Frame-Options", "DENY", func(h *SecurityHeadersConfig) string { return h.XFrameOptions }},
-	{"X-Content-Type-Options", "nosniff", func(h *SecurityHeadersConfig) string { return h.XContentTypeOptions }},
-	{"Referrer-Policy", "strict-origin-when-cross-origin", func(h *SecurityHeadersConfig) string { return h.ReferrerPolicy }},
-	{"X-XSS-Protection", "1; mode=block", func(h *SecurityHeadersConfig) string { return h.XXSSProtection }},
+	{key: "Content-Security-Policy", def: "default-src 'self'", getVal: func(h *SecurityHeadersConfig) string { return h.ContentSecurityPolicy }},
+	{key: "X-Frame-Options", def: "DENY", getVal: func(h *SecurityHeadersConfig) string { return h.XFrameOptions }},
+	{key: "X-Content-Type-Options", def: "nosniff", getVal: func(h *SecurityHeadersConfig) string { return h.XContentTypeOptions }},
+	{key: "Referrer-Policy", def: "strict-origin-when-cross-origin", getVal: func(h *SecurityHeadersConfig) string { return h.ReferrerPolicy }},
+	{key: "X-XSS-Protection", def: "1; mode=block", getVal: func(h *SecurityHeadersConfig) string { return h.XXSSProtection }},
 }
 
 // SecurityHeadersMiddleware returns Echo middleware that applies SecurityHeadersConfig to responses.
