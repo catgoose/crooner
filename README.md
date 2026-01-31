@@ -29,6 +29,7 @@
     - [Type-Specific Session Helper Functions](#type-specific-session-helper-functions)
       - [Available Helpers](#available-helpers)
       - [Usage Example](#usage-example)
+    - [Error Types](#error-types)
   - [Questions? PRs? Hecklers?](#questions-prs-hecklers)
   - [License](#license)
   - [Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)](#driving-crooner-authentication-flow-dont-let-them-make-it-look-fake)
@@ -206,6 +207,17 @@ params := &crooner.AuthConfigParams{
 }
 ```
 
+The Crooner don't fake who's in the car. You pick which ID token claim rides shotgun as the session user—default's `"email"`. If your Azure AD app ain't giving you email, use `"preferred_username"` or `"upn"`:
+
+```go
+params := &crooner.AuthConfigParams{
+ // ... other config ...
+ UserClaim: "preferred_username", // or "upn" for some tenants
+}
+```
+
+Crooner tries your claim first, then falls back to `email` and `preferred_username` so nobody gets left at the curb.
+
 #### Default Security Header Values
 
 | Header                     | Default Value                      |
@@ -259,6 +271,8 @@ if err != nil {
 ## Advanced Usage (You Gotta Be Right Next to Me)
 
 If you need to fully customize the session config, you can use `crooner.DefaultSecureSessionConfig()` and then pass it to `crooner.NewSCSManagerWithConfig(cfg)`. This is for advanced use only.
+
+Sometimes you don't need the full show—just "who's in the car." Use `crooner.RequireAuth(sessionMgr, routes)` as middleware: `e.Use(crooner.RequireAuth(sessionMgr, routes))` or slap it on a group. Only the real ones get through. No fake passengers, baby.
 
 ```go
 cfg := crooner.DefaultSecureSessionConfig()
@@ -419,8 +433,6 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
 
-### Examples
-
 ## Retrieving the Session Cookie Name
 
 When you create a session manager using crooner, the session cookie name may be generated dynamically (for example, using `WithPersistentCookieName`). To retrieve the actual cookie name for use in your application (such as in middleware), use the `GetCookieName()` method on the session manager:
@@ -471,6 +483,17 @@ func myHandler(c echo.Context) error {
 
 These helpers provide robust error handling and work with any backend that implements the `SessionManager` interface.
 
+### Error Types
+
+When something goes wrong, the Crooner don't leave you guessing. We use typed errors so you can check with `errors.As` or `errors.Is`:
+
+- **ConfigError** — something's wrong with the setup (e.g. from `NewAuthConfig`). Check with `crooner.IsConfigError(err)` or `errors.As(err, &cfgErr)` where `var cfgErr *crooner.ConfigError`.
+- **AuthError** — token exchange or ID token didn't check out. Check with `crooner.IsAuthError(err)` or `crooner.AsAuthError(err)`.
+- **ChallengeError** — PKCE or state got messed up. Check with `crooner.IsChallengeError(err)` or `crooner.AsChallengeError(err)`.
+- **SessionError** — session get/set or wrong type (e.g. from `GetString`, `GetInt`, `GetBool`). Check with `crooner.IsSessionError(err)` or `crooner.AsSessionError(err)`.
+- **State decode errors** — invalid OAuth state (bad base64 or malformed payload). Use `errors.Is(err, crooner.ErrInvalidStateFormat)` or `errors.Is(err, crooner.ErrInvalidStateData)`.
+
+Don't let them make it look fake. Handle your errors.
 
 ## Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)
 

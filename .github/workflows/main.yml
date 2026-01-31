@@ -1,32 +1,82 @@
-name: Auto Tag Patch and Release
+name: CI and Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
 
-jobs:
-  tag:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+concurrency:
+  group: ci-main
+  cancel-in-progress: false
 
-      - name: Set up Git
+jobs:
+  ci-release:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message || '', '[skip ci]') }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build and test (original)
+        run: |
+          go build -v ./...
+          go test -v ./...
+
+      - name: Save go.mod and go.sum
+        run: |
+          cp go.mod /tmp/go.mod.bak
+          cp go.sum /tmp/go.sum.bak
+
+      - name: Update dependencies
+        run: |
+          go get -u ./...
+          go mod tidy
+
+      - name: Build and test (updated)
+        run: |
+          go build -v ./...
+          go test -v ./...
+
+      - name: Check for dependency changes
+        id: check-deps
+        run: |
+          git add go.mod go.sum
+          if git diff --staged --quiet; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit dependency changes
+        if: steps.check-deps.outputs.changed == 'true'
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update Go dependencies and Go version [skip ci]"
+          git pull --rebase origin main
+          git push origin main
 
-      - name: Fetch all tags
+      - name: Set up Git for tag
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch tags
         run: git fetch --tags
 
       - name: Get latest tag
         id: get_tag
         run: |
-          # Get the latest tag in the format X.Y.Z (strip leading v)
           latest_tag=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n 1 | sed 's/^v//')
           if [ -z "$latest_tag" ]; then
             latest_tag="0.0.0"
@@ -45,6 +95,26 @@ jobs:
           new_tag="v$major.$minor.$patch"
           echo "new_tag=$new_tag" >> $GITHUB_OUTPUT
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "## Changes" >> release_notes.md
+          prev_tag="v${{ steps.get_tag.outputs.latest_tag }}"
+          if git rev-parse "$prev_tag" >/dev/null 2>&1; then
+            git log "$prev_tag"..HEAD --pretty=format:"- %s" | grep -v "\[skip ci\]" >> release_notes.md || true
+          else
+            git log --pretty=format:"- %s" | grep -v "\[skip ci\]" >> release_notes.md || true
+          fi
+          echo "" >> release_notes.md
+          if [ "${{ steps.check-deps.outputs.changed }}" = "true" ]; then
+            echo "## Dependency Updates" >> release_notes.md
+            echo '```' >> release_notes.md
+            diff /tmp/go.mod.bak go.mod >> release_notes.md || true
+            echo '```' >> release_notes.md
+            echo "" >> release_notes.md
+          fi
+          echo "Go version: $(grep '^go ' go.mod | awk '{print $2}')" >> release_notes.md
+
       - name: Create tag
         run: |
           git tag ${{ steps.bump_version.outputs.new_tag }}
@@ -54,5 +124,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.bump_version.outputs.new_tag }}
+          body_path: release_notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

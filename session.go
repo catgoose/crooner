@@ -14,7 +14,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	http "net/http"
+	"net/http"
 	"time"
 
 	scs "github.com/alexedwards/scs/v2"
@@ -129,58 +129,74 @@ const (
 	SessionKeyCodeVerifier = "code_verifier"
 )
 
+func getSessionTyped[T any](sm SessionManager, c echo.Context, key string, zero T, check func(any) (T, bool)) (T, error) {
+	val, err := sm.Get(c, key)
+	if err != nil || val == nil {
+		return zero, &SessionError{Key: key, Reason: ReasonNotFound}
+	}
+	v, ok := check(val)
+	if !ok {
+		return zero, &SessionError{Key: key, Reason: ReasonInvalidType}
+	}
+	return v, nil
+}
+
 // GetString retrieves a string value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not a string.
 func GetString(sm SessionManager, c echo.Context, key string) (string, error) {
-	val, err := sm.Get(c, key)
-	if err != nil {
-		return "", &SessionError{Key: key, Reason: ReasonNotFound}
-	}
-	str, ok := val.(string)
-	if !ok {
-		return "", &SessionError{Key: key, Reason: ReasonInvalidType}
-	}
-	return str, nil
+	return getSessionTyped(sm, c, key, "", func(a any) (string, bool) { s, ok := a.(string); return s, ok })
 }
 
 // GetInt retrieves an int value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not an int.
 func GetInt(sm SessionManager, c echo.Context, key string) (int, error) {
-	val, err := sm.Get(c, key)
-	if err != nil {
-		return 0, &SessionError{Key: key, Reason: ReasonNotFound}
-	}
-	i, ok := val.(int)
-	if !ok {
-		return 0, &SessionError{Key: key, Reason: ReasonInvalidType}
-	}
-	return i, nil
+	return getSessionTyped(sm, c, key, 0, func(a any) (int, bool) { i, ok := a.(int); return i, ok })
 }
 
 // GetBool retrieves a bool value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not a bool.
 func GetBool(sm SessionManager, c echo.Context, key string) (bool, error) {
-	val, err := sm.Get(c, key)
-	if err != nil {
-		return false, &SessionError{Key: key, Reason: ReasonNotFound}
+	return getSessionTyped(sm, c, key, false, func(a any) (bool, bool) { b, ok := a.(bool); return b, ok })
+}
+
+// SaveSessionValueClaims stores configured claims from the ID token into the session.
+// valueClaims is a slice of maps: each map has one entry (session key -> claim name).
+// Slice/array claim values are normalized to []string.
+func SaveSessionValueClaims(sm SessionManager, c echo.Context, claims map[string]any, valueClaims []map[string]string) error {
+	if valueClaims == nil {
+		return nil
 	}
-	b, ok := val.(bool)
-	if !ok {
-		return false, &SessionError{Key: key, Reason: ReasonInvalidType}
+	for _, valueMap := range valueClaims {
+		for key, claim := range valueMap {
+			if val, ok := claims[claim]; ok {
+				if slice, isSlice := val.([]any); isSlice {
+					var sliceStrings []string
+					for _, role := range slice {
+						if strRole, isString := role.(string); isString {
+							sliceStrings = append(sliceStrings, strRole)
+						}
+					}
+					val = sliceStrings
+				}
+				if err := sm.Set(c, key, val); err != nil {
+					return err
+				}
+			}
+		}
 	}
-	return b, nil
+	return nil
 }
 
 // SessionConfig holds configuration for the SCS session manager factory.
 type SessionConfig struct {
+	Store          scs.Store
 	CookieName     string
 	CookieDomain   string
 	CookiePath     string
-	CookieSecure   bool
-	CookieHTTPOnly bool
 	CookieSameSite http.SameSite
 	Lifetime       time.Duration
-	Store          scs.Store // optional, for advanced users
+	CookieSecure   bool
+	CookieHTTPOnly bool
 }
 
 // DefaultSecureSessionConfig returns a config with secure defaults.
