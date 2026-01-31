@@ -37,6 +37,21 @@ jobs:
           cp go.mod /tmp/go.mod.bak
           cp go.sum /tmp/go.sum.bak
 
+      - name: Get latest Go version
+        id: go
+        run: |
+          version=$(curl -sL https://go.dev/VERSION?m=text | sed 's/^go//')
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Upgrade Go version
+        run: go mod edit -go=${{ steps.go.outputs.version }}
+
+      - name: Set up Go (upgraded)
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.go.outputs.version }}
+          cache: true
+
       - name: Update dependencies
         run: |
           go get -u ./...
