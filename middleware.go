@@ -5,9 +5,9 @@ import (
 )
 
 type securityHeaderSpec struct {
+	getVal func(*SecurityHeadersConfig) string
 	key    string
 	def    string
-	getVal func(*SecurityHeadersConfig) string
 }
 
 var securityHeaderSpecs = []securityHeaderSpec{
