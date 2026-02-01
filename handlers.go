@@ -1,6 +1,7 @@
 package crooner
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -113,7 +114,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		}
 
 		receivedState := c.QueryParam("state")
-		if receivedState != expectedState {
+		if subtle.ConstantTimeCompare([]byte(receivedState), []byte(expectedState)) != 1 {
 			return c.Redirect(http.StatusFound, loginRedirectURL(a.AuthRoutes, c.Request().RequestURI))
 		}
 
@@ -144,6 +145,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		token, err := a.ExchangeToken(c.Request().Context(), code, codeVerifier)
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
+		}
+		if err := a.SessionMgr.Delete(c, SessionKeyCodeVerifier); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear code verifier", err)
 		}
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
