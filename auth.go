@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 
@@ -406,6 +407,30 @@ func ValidateRedirectURL(rawURL string, uv *URLValidationConfig) error {
 		}
 	}
 	return nil
+}
+
+// ValidatePostLoginRedirect validates the post-login redirect target (originalPath).
+// It allows only same-origin relative paths: must start with "/" and not "//", and must not be an absolute URL.
+// Path is normalized (path.Clean) to prevent traversal; the returned safePath should be used for the redirect.
+// baseURL and config are reserved for future use (e.g. allowlisting absolute URLs).
+func ValidatePostLoginRedirect(originalPath string, baseURL string, config *URLValidationConfig) (safePath string, err error) {
+	if originalPath == "" {
+		return "/", nil
+	}
+	if strings.HasPrefix(originalPath, "//") {
+		return "", fmt.Errorf("protocol-relative URL not allowed")
+	}
+	if !strings.HasPrefix(originalPath, "/") {
+		return "", fmt.Errorf("redirect must be a relative path")
+	}
+	if strings.Contains(originalPath, "://") {
+		return "", fmt.Errorf("absolute URL not allowed")
+	}
+	normalized := path.Clean(originalPath)
+	if normalized != "/" && !strings.HasPrefix(normalized, "/") {
+		return "", fmt.Errorf("invalid path after normalization")
+	}
+	return normalized, nil
 }
 
 // getDefaultSessionSecurity returns secure default session configuration

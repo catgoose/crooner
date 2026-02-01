@@ -61,6 +61,13 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	e.GET(routes.Logout, a.logoutHandler())
 }
 
+func safeRedirectTarget(a *AuthHandlerConfig) string {
+	if a.LoginURLRedirect != "" {
+		return a.LoginURLRedirect
+	}
+	return "/"
+}
+
 // loginHandler creates a handler function for the login route
 func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
@@ -73,7 +80,12 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if originalPath == "" {
 			originalPath = c.Request().RequestURI
 		}
-		state := EncodeStatePayload(csrfState, originalPath)
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
+		if err != nil {
+			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+		}
+		state := EncodeStatePayload(csrfState, safePath)
 
 		if err := a.SessionMgr.Set(c, SessionKeyOAuthState, state); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
