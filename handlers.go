@@ -161,13 +161,23 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if userVal == "" {
 			return a.handleError(c, http.StatusInternalServerError, "No user claim found in token", nil)
 		}
+		if renewer, ok := a.SessionMgr.(SessionTokenRenewer); ok {
+			if err := renewer.RenewToken(c); err != nil {
+				return a.handleError(c, http.StatusInternalServerError, "Failed to renew session token", err)
+			}
+		}
 		if err := a.SessionMgr.Set(c, SessionKeyUser, userVal); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
 		if err := SaveSessionValueClaims(a.SessionMgr, c, claims, a.SessionValueClaims); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-		return c.Redirect(http.StatusFound, originalPath)
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
+		if err != nil {
+			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+		}
+		return c.Redirect(http.StatusFound, safePath)
 	}
 }
 

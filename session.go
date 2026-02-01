@@ -37,6 +37,11 @@ type SessionManager interface {
 	ClearInvalidate(c echo.Context) error
 }
 
+// SessionTokenRenewer is an optional interface for session backends that can regenerate the session token (e.g. to prevent session fixation). If SessionManager implements this, it will be called after successful login before storing user data.
+type SessionTokenRenewer interface {
+	RenewToken(c echo.Context) error
+}
+
 // SCSManager implements SessionManager using SCS (github.com/alexedwards/scs/v2)
 type SCSManager struct {
 	Session    *scs.SessionManager
@@ -71,6 +76,11 @@ func (s *SCSManager) ClearInvalidate(c echo.Context) error {
 		return err
 	}
 	return s.Invalidate(c)
+}
+
+// RenewToken regenerates the session token to prevent session fixation. Call after privilege-level change (e.g. login).
+func (s *SCSManager) RenewToken(c echo.Context) error {
+	return s.Session.RenewToken(c.Request().Context())
 }
 
 // SessionError represents an error related to session operations.
