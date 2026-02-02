@@ -60,3 +60,14 @@ func TestDecodeStatePayload_MalformedPayload_Empty(t *testing.T) {
 		t.Errorf("errors.Is(err, ErrInvalidStateData) = false, got err: %v", err)
 	}
 }
+
+func TestDecodeStatePayload_EmptySecondPart_DefaultsToSlash(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString([]byte("csrf|"))
+	decoded, err := DecodeStatePayload(encoded)
+	if err != nil {
+		t.Fatalf("DecodeStatePayload: %v", err)
+	}
+	if decoded != "/" {
+		t.Errorf("decoded path = %q, want \"/\"", decoded)
+	}
+}
