@@ -2,7 +2,9 @@ package crooner
 
 import (
 	"encoding/base64"
+	"errors"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -54,5 +56,52 @@ func TestGenerateState_IsChallengeError(t *testing.T) {
 	}
 	if s == "" {
 		t.Error("GenerateState returned empty string")
+	}
+}
+
+func TestChallengeError_ErrorAndUnwrap(t *testing.T) {
+	inner := errors.New("inner")
+	ce := &ChallengeError{Op: "TestOp", Err: inner}
+	if ce.Error() == "" {
+		t.Error("ChallengeError.Error() empty")
+	}
+	if !strings.Contains(ce.Error(), "TestOp") || !strings.Contains(ce.Error(), "inner") {
+		t.Errorf("ChallengeError.Error() = %q", ce.Error())
+	}
+	if ce.Unwrap() != inner {
+		t.Error("ChallengeError.Unwrap() != inner")
+	}
+	ceNoErr := &ChallengeError{Op: "Op", Err: nil}
+	if ceNoErr.Error() == "" {
+		t.Error("ChallengeError with nil Err: Error() empty")
+	}
+	if ceNoErr.Unwrap() != nil {
+		t.Error("ChallengeError with nil Err: Unwrap() != nil")
+	}
+}
+
+func TestChallengeError_IsChallengeError_AsChallengeError(t *testing.T) {
+	ce := &ChallengeError{Op: "Op", Err: nil}
+	if !IsChallengeError(ce) {
+		t.Error("IsChallengeError(ChallengeError) = false")
+	}
+	got, ok := AsChallengeError(ce)
+	if !ok || got != ce {
+		t.Errorf("AsChallengeError = %v, %v; want ce, true", got, ok)
+	}
+	if IsChallengeError(nil) {
+		t.Error("IsChallengeError(nil) = true")
+	}
+	_, ok = AsChallengeError(nil)
+	if ok {
+		t.Error("AsChallengeError(nil) = true")
+	}
+	wrapped := errors.Join(ce, errors.New("other"))
+	if !IsChallengeError(wrapped) {
+		t.Error("IsChallengeError(wrapped ChallengeError) = false")
+	}
+	got, ok = AsChallengeError(wrapped)
+	if !ok || got != ce {
+		t.Errorf("AsChallengeError(wrapped) = %v, %v", got, ok)
 	}
 }

@@ -120,9 +120,13 @@ func SessionErrorResponse(err error) map[string]any {
 			"reason": sessionErr.Reason,
 		}
 	}
+	msg := ""
+	if err != nil {
+		msg = err.Error()
+	}
 	return map[string]any{
 		"error":   "unknown_error",
-		"message": err.Error(),
+		"message": msg,
 	}
 }
 

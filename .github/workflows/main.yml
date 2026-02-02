@@ -30,8 +30,17 @@ jobs:
 
       - name: Build and test (original)
         run: |
-          go build -v ./...
+          mkdir -p bin
+          go build -v -o bin/oauth-server ./cmd/oauth-server/
+          go build -v -o bin/app ./cmd/app/
+          go build -v -o bin/simulate ./cmd/simulate/
           go test -v ./...
+
+      - name: Install Playwright browsers
+        run: go run github.com/playwright-community/playwright-go/cmd/playwright@latest install --with-deps
+
+      - name: Run PKCE simulation
+        run: ./scripts/run-pkce-sim.sh
 
       - name: Save go.mod and go.sum
         run: |
@@ -60,7 +69,10 @@ jobs:
 
       - name: Build and test (updated)
         run: |
-          go build -v ./...
+          mkdir -p bin
+          go build -v -o bin/oauth-server ./cmd/oauth-server/
+          go build -v -o bin/app ./cmd/app/
+          go build -v -o bin/simulate ./cmd/simulate/
           go test -v ./...
 
       - name: Check for dependency changes
