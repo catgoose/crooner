@@ -2,6 +2,7 @@ package crooner
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -152,6 +153,7 @@ type AuthConfigParams struct {
 	RedirectURL        string
 	TenantID           string
 	ClientSecret       string
+	IssuerURL          string
 	UserClaim          string
 	AdditionalScopes   []string
 	SessionValueClaims []map[string]string
@@ -202,14 +204,70 @@ func loginRedirectURL(routes *AuthRoutes, uri string) string {
 //	        log.Printf("Other error: %v", err)
 //	    }
 //	}
+type oidcDiscovery struct {
+	Issuer                string   `json:"issuer"`
+	AuthorizationEndpoint string   `json:"authorization_endpoint"`
+	TokenEndpoint         string   `json:"token_endpoint"`
+	JWKSURI               string   `json:"jwks_uri"`
+	ResponseTypes         []string `json:"response_types_supported"`
+	ScopesSupported       []string `json:"scopes_supported"`
+}
+
+func fetchOIDCDiscovery(ctx context.Context, issuerURL string) (*oidcDiscovery, error) {
+	discoveryURL := strings.TrimSuffix(issuerURL, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discoveryURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("discovery returned status %d", resp.StatusCode)
+	}
+	var d oidcDiscovery
+	if err := json.NewDecoder(resp.Body).Decode(&d); err != nil {
+		return nil, err
+	}
+	if d.AuthorizationEndpoint == "" || d.TokenEndpoint == "" {
+		return nil, fmt.Errorf("discovery missing authorization_endpoint or token_endpoint")
+	}
+	return &d, nil
+}
+
 func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) error {
 	if err := validateAuthParams(params); err != nil {
 		return err
 	}
 
-	provider, err := oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
-	if err != nil {
-		return &ConfigError{Field: "TenantID", Reason: "failed to initialize OIDC provider", Err: err}
+	var provider *oidc.Provider
+	var oauth2Endpoint oauth2.Endpoint
+	tenantID := params.TenantID
+
+	if params.IssuerURL != "" {
+		issuerURL := strings.TrimSuffix(params.IssuerURL, "/")
+		var err error
+		provider, err = oidc.NewProvider(ctx, issuerURL)
+		if err != nil {
+			return &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
+		}
+		discovery, err := fetchOIDCDiscovery(ctx, issuerURL)
+		if err != nil {
+			return &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
+		}
+		oauth2Endpoint = oauth2.Endpoint{
+			AuthURL:  discovery.AuthorizationEndpoint,
+			TokenURL: discovery.TokenEndpoint,
+		}
+	} else {
+		var err error
+		provider, err = oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
+		if err != nil {
+			return &ConfigError{Field: "TenantID", Reason: "failed to initialize OIDC provider", Err: err}
+		}
+		oauth2Endpoint = microsoft.AzureADEndpoint(params.TenantID)
 	}
 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
@@ -232,17 +290,22 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		params.UserClaim = "email"
 	}
 
+	clientSecret := params.ClientSecret
+	if params.IssuerURL != "" && clientSecret == "" {
+		clientSecret = "mock"
+	}
+
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
 			ClientID:     params.ClientID,
-			ClientSecret: params.ClientSecret,
-			Endpoint:     microsoft.AzureADEndpoint(params.TenantID),
+			ClientSecret: clientSecret,
+			Endpoint:     oauth2Endpoint,
 			RedirectURL:  params.RedirectURL,
 			Scopes:       scopes,
 		},
 		Provider:          provider,
 		Verifier:          provider.Verifier(&oidc.Config{ClientID: params.ClientID}),
-		TenantID:          params.TenantID,
+		TenantID:          tenantID,
 		LogoutURLRedirect: params.LogoutURLRedirect,
 		LoginURLRedirect:  params.LoginURLRedirect,
 		AuthRoutes:        params.AuthRoutes,
@@ -281,6 +344,15 @@ func validateAuthParams(params *AuthConfigParams) error {
 }
 
 func validateRequiredAuthParams(params *AuthConfigParams) error {
+	if params.IssuerURL != "" {
+		if params.ClientID == "" {
+			return &ConfigError{Field: "ClientID", Reason: "missing required parameter"}
+		}
+		if params.RedirectURL == "" {
+			return &ConfigError{Field: "RedirectURL", Reason: "missing required parameter"}
+		}
+		return nil
+	}
 	if params.TenantID == "" {
 		return &ConfigError{Field: "TenantID", Reason: "missing required parameter"}
 	}

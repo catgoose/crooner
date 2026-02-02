@@ -209,6 +209,9 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", err)
 		}
 
+		if a.TenantID == "" {
+			return c.Redirect(http.StatusFound, a.LogoutURLRedirect)
+		}
 		logoutURL := fmt.Sprintf(
 			"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
 			a.TenantID,
