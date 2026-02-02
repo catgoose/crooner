@@ -32,6 +32,7 @@
     - [Error Types](#error-types)
   - [Questions? PRs? Hecklers?](#questions-prs-hecklers)
   - [License](#license)
+  - [Testing (You Gotta Be Right Next to Me)](#testing-you-gotta-be-right-next-to-me)
   - [Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)](#driving-crooner-authentication-flow-dont-let-them-make-it-look-fake)
     - [How the Crooner Keeps You on the Road](#how-the-crooner-keeps-you-on-the-road)
       - [Example: The Real Crooner Flow](#example-the-real-crooner-flow)
@@ -497,6 +498,19 @@ When something goes wrong, the Crooner don't leave you guessing. We use typed er
 - **State decode errors** — invalid OAuth state (bad base64 or malformed payload). Use `errors.Is(err, crooner.ErrInvalidStateFormat)` or `errors.Is(err, crooner.ErrInvalidStateData)`.
 
 Don't let them make it look fake. Handle your errors.
+
+## Testing (You Gotta Be Right Next to Me)
+
+Using Crooner in your app does **not** pull in Playwright—no fake passengers, baby. The main module has zero browser deps.
+
+The PKCE simulation lives in the `simulate/` submodule. That module has Playwright as a dependency and the install CLI as a **tool**, so the version is pinned and you're not chasing `@latest` like some guy in a hot dog suit. To run the simulation from the repo root:
+
+```bash
+cd simulate && go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+cd .. && ./scripts/run-pkce-sim.sh
+```
+
+The script builds the app and mock OAuth server from the root module and the `simulate` binary from `simulate/`; starts the servers; and drives the browser through the happy path and security checks. If you skip the Playwright install, the simulation will fail—you gotta be right next to the browser for it to look real.
 
 ## Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)
 

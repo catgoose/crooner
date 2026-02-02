@@ -247,7 +247,7 @@ func validAuthConfigParams() *AuthConfigParams {
 		RedirectURL:        "https://example.com/callback",
 		LogoutURLRedirect:  "https://example.com/logout",
 		LoginURLRedirect:   "https://example.com/",
-		AuthRoutes:        &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"},
+		AuthRoutes:         &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"},
 		URLValidation:      nil,
 		SessionMgr:         nil,
 		SecurityHeaders:    nil,
@@ -459,9 +459,9 @@ func TestNewAuthConfig_InvalidAdditionalScopes(t *testing.T) {
 func TestGetLoginURL_ContainsParams(t *testing.T) {
 	cfg := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
-			ClientID:     "client-id",
-			RedirectURL:  "https://example.com/callback",
-			Endpoint:     microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
+			ClientID:    "client-id",
+			RedirectURL: "https://example.com/callback",
+			Endpoint:    microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
 		},
 	}
 	state := "my-state"
@@ -492,9 +492,9 @@ func TestGetLoginURL_ContainsParams(t *testing.T) {
 func TestGetLoginURL_WithNonce(t *testing.T) {
 	cfg := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
-			ClientID:     "client-id",
-			RedirectURL:  "https://example.com/callback",
-			Endpoint:     microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
+			ClientID:    "client-id",
+			RedirectURL: "https://example.com/callback",
+			Endpoint:    microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
 		},
 	}
 	nonce := "my-nonce"

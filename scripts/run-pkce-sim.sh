@@ -17,7 +17,7 @@ mkdir -p "$ROOT/bin"
 echo "Building PKCE simulation binaries to bin/..."
 go build -o "$ROOT/bin/oauth-server" ./cmd/oauth-server/
 go build -o "$ROOT/bin/app" ./cmd/app/
-go build -o "$ROOT/bin/simulate" ./cmd/simulate/
+(cd "$ROOT/simulate" && go build -o "$ROOT/bin/simulate" .)
 
 echo "Starting mock OIDC server on :$OAUTH_PORT..."
 "$ROOT/bin/oauth-server" -port="$OAUTH_PORT" & OAUTH_PID=$!
