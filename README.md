@@ -407,6 +407,8 @@ This approach allows you to use Redis (or any other backend) for session storage
 - Rotate the session secret to force logout of all users
 - Use HTTPS, HttpOnly, SameSite, Secure cookies
 - Configure CSP for your frontend’s needs
+- Keep `ErrorConfig.ShowDetails` **false** in production so internal error details (e.g. from OAuth or ID token verification) are not sent to the client
+- When running behind a reverse proxy (TLS termination), configure your app or Echo to trust proxy headers (e.g. `X-Forwarded-Proto`, `X-Forwarded-Host`) so `Scheme` and `Host` are correct for redirects and HSTS
 
 ## Session Lifetime Recommendations (How Long's the Set?)
 
@@ -432,6 +434,7 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 
 - Always destroy the session on logout.
 - Regenerate the session on login or privilege change.
+- The logout route is **POST** only to reduce logout CSRF; use a form with `method="post"` and `action="/logout"` (or a button that submits it) for your logout button.
 
 ## Retrieving the Session Cookie Name
 
