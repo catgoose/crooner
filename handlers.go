@@ -59,7 +59,7 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	routes := a.AuthRoutes
 	e.GET(routes.Login, a.loginHandler())
 	e.GET(routes.Callback, a.callbackHandler())
-	e.GET(routes.Logout, a.logoutHandler())
+	e.POST(routes.Logout, a.logoutHandler())
 }
 
 func safeRedirectTarget(a *AuthHandlerConfig) string {
