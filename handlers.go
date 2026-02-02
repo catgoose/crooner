@@ -1,6 +1,7 @@
 package crooner
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -58,7 +59,14 @@ func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	routes := a.AuthRoutes
 	e.GET(routes.Login, a.loginHandler())
 	e.GET(routes.Callback, a.callbackHandler())
-	e.GET(routes.Logout, a.logoutHandler())
+	e.POST(routes.Logout, a.logoutHandler())
+}
+
+func safeRedirectTarget(a *AuthHandlerConfig) string {
+	if a.LoginURLRedirect != "" {
+		return a.LoginURLRedirect
+	}
+	return "/"
 }
 
 // loginHandler creates a handler function for the login route
@@ -73,7 +81,12 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if originalPath == "" {
 			originalPath = c.Request().RequestURI
 		}
-		state := EncodeStatePayload(csrfState, originalPath)
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
+		if err != nil {
+			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+		}
+		state := EncodeStatePayload(csrfState, safePath)
 
 		if err := a.SessionMgr.Set(c, SessionKeyOAuthState, state); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
@@ -87,7 +100,14 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if err := a.SessionMgr.Set(c, SessionKeyCodeVerifier, codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-		loginURL := a.GetLoginURL(state, codeChallenge)
+		nonce, err := GenerateState()
+		if err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to generate nonce", err)
+		}
+		if err := a.SessionMgr.Set(c, SessionKeyOAuthNonce, nonce); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to save nonce", err)
+		}
+		loginURL := a.GetLoginURL(state, codeChallenge, nonce)
 		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
 }
@@ -101,7 +121,7 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		}
 
 		receivedState := c.QueryParam("state")
-		if receivedState != expectedState {
+		if subtle.ConstantTimeCompare([]byte(receivedState), []byte(expectedState)) != 1 {
 			return c.Redirect(http.StatusFound, loginRedirectURL(a.AuthRoutes, c.Request().RequestURI))
 		}
 
@@ -133,6 +153,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
 		}
+		if err := a.SessionMgr.Delete(c, SessionKeyCodeVerifier); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear code verifier", err)
+		}
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
 			return a.handleError(c, http.StatusInternalServerError, "ID token not found in token response", nil)
@@ -141,9 +164,24 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
 		}
+		expectedNonce, err := GetString(a.SessionMgr, c, SessionKeyOAuthNonce)
+		if err != nil {
+			return a.handleError(c, http.StatusBadRequest, "Nonce not found", err)
+		}
+		if err := a.SessionMgr.Delete(c, SessionKeyOAuthNonce); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear nonce", err)
+		}
+		if claimNonce, _ := claims["nonce"].(string); claimNonce != expectedNonce {
+			return a.handleError(c, http.StatusBadRequest, "Nonce mismatch", nil)
+		}
 		userVal := userClaimValue(claims, a.UserClaim)
 		if userVal == "" {
 			return a.handleError(c, http.StatusInternalServerError, "No user claim found in token", nil)
+		}
+		if renewer, ok := a.SessionMgr.(SessionTokenRenewer); ok {
+			if err := renewer.RenewToken(c); err != nil {
+				return a.handleError(c, http.StatusInternalServerError, "Failed to renew session token", err)
+			}
 		}
 		if err := a.SessionMgr.Set(c, SessionKeyUser, userVal); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
@@ -151,7 +189,12 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err := SaveSessionValueClaims(a.SessionMgr, c, claims, a.SessionValueClaims); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-		return c.Redirect(http.StatusFound, originalPath)
+		baseURL := c.Scheme() + "://" + c.Request().Host
+		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
+		if err != nil {
+			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+		}
+		return c.Redirect(http.StatusFound, safePath)
 	}
 }
 

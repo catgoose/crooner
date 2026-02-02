@@ -87,3 +87,63 @@ func TestIsAuthExemptPath_AuthExempt(t *testing.T) {
 		t.Error("IsAuthExemptPath(/private) = true, want false")
 	}
 }
+
+func TestValidatePostLoginRedirect_RelativePaths(t *testing.T) {
+	base := "https://example.com"
+	for _, tc := range []struct {
+		path     string
+		wantPath string
+		wantErr  bool
+	}{
+		{"/", "/", false},
+		{"/dashboard", "/dashboard", false},
+		{"/dashboard?id=42", "/dashboard?id=42", false},
+		{"/foo/bar", "/foo/bar", false},
+		{"/foo/../bar", "/bar", false},
+		{"/foo/./bar", "/foo/bar", false},
+		{"", "/", false},
+	} {
+		got, err := ValidatePostLoginRedirect(tc.path, base, nil)
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("ValidatePostLoginRedirect(%q) = %q, nil; want error", tc.path, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("ValidatePostLoginRedirect(%q) = %q, %v; want %q, nil", tc.path, got, err, tc.wantPath)
+			continue
+		}
+		if tc.path != "" && tc.path != "/foo/../bar" && tc.path != "/foo/./bar" {
+			if got != tc.wantPath {
+				t.Errorf("ValidatePostLoginRedirect(%q) = %q; want %q", tc.path, got, tc.wantPath)
+			}
+		}
+		if tc.path == "" && got != "/" {
+			t.Errorf("ValidatePostLoginRedirect(%q) = %q; want /", tc.path, got)
+		}
+		if tc.path == "/foo/../bar" && got != "/bar" {
+			t.Errorf("ValidatePostLoginRedirect(/foo/../bar) = %q; want /bar", got)
+		}
+		if tc.path == "/foo/./bar" && got != "/foo/bar" {
+			t.Errorf("ValidatePostLoginRedirect(/foo/./bar) = %q; want /foo/bar", got)
+		}
+	}
+}
+
+func TestValidatePostLoginRedirect_Rejected(t *testing.T) {
+	base := "https://example.com"
+	for _, path := range []string{
+		"//evil.com/path",
+		"//evil.com",
+		"https://evil.com/path",
+		"http://evil.com",
+		"javascript:alert(1)",
+		"relative/no/leading/slash",
+	} {
+		got, err := ValidatePostLoginRedirect(path, base, nil)
+		if err == nil {
+			t.Errorf("ValidatePostLoginRedirect(%q) = %q, nil; want error", path, got)
+		}
+	}
+}
