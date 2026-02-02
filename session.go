@@ -137,6 +137,7 @@ const (
 	SessionKeyUser         = "user"
 	SessionKeyOAuthState   = "oauth_state"
 	SessionKeyCodeVerifier = "code_verifier"
+	SessionKeyOAuthNonce   = "oauth_nonce"
 )
 
 func getSessionTyped[T any](sm SessionManager, c echo.Context, key string, zero T, check func(any) (T, bool)) (T, error) {

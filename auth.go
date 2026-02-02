@@ -445,12 +445,16 @@ func getDefaultSessionSecurity() *SessionSecurityConfig {
 }
 
 // GetLoginURL constructs and returns the Azure AD login URL
-func (c *AuthConfig) GetLoginURL(state, codeChallenge string) string {
-	return c.OAuth2Config.AuthCodeURL(state,
+func (c *AuthConfig) GetLoginURL(state, codeChallenge, nonce string) string {
+	opts := []oauth2.AuthCodeOption{
 		oauth2.AccessTypeOffline,
 		oauth2.SetAuthURLParam("code_challenge", codeChallenge),
 		oauth2.SetAuthURLParam("code_challenge_method", "S256"),
-	)
+	}
+	if nonce != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("nonce", nonce))
+	}
+	return c.OAuth2Config.AuthCodeURL(state, opts...)
 }
 
 // ExchangeToken exchanges the authorization code for an access token

@@ -100,7 +100,14 @@ func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
 		if err := a.SessionMgr.Set(c, SessionKeyCodeVerifier, codeVerifier); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
-		loginURL := a.GetLoginURL(state, codeChallenge)
+		nonce, err := GenerateState()
+		if err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to generate nonce", err)
+		}
+		if err := a.SessionMgr.Set(c, SessionKeyOAuthNonce, nonce); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to save nonce", err)
+		}
+		loginURL := a.GetLoginURL(state, codeChallenge, nonce)
 		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
 	}
 }
@@ -156,6 +163,16 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		claims, err := a.VerifyIDToken(c.Request().Context(), idToken)
 		if err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
+		}
+		expectedNonce, err := GetString(a.SessionMgr, c, SessionKeyOAuthNonce)
+		if err != nil {
+			return a.handleError(c, http.StatusBadRequest, "Nonce not found", err)
+		}
+		if err := a.SessionMgr.Delete(c, SessionKeyOAuthNonce); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to clear nonce", err)
+		}
+		if claimNonce, _ := claims["nonce"].(string); claimNonce != expectedNonce {
+			return a.handleError(c, http.StatusBadRequest, "Nonce mismatch", nil)
 		}
 		userVal := userClaimValue(claims, a.UserClaim)
 		if userVal == "" {
