@@ -329,7 +329,13 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		SessionValueClaims: params.SessionValueClaims,
 		SessionMgr:         params.SessionMgr,
 	}
+	if errorExampleRoutesEnabled() && params.AuthRoutes != nil {
+		params.AuthRoutes.AuthExempt = append(params.AuthRoutes.AuthExempt, errorExamplesPrefix)
+	}
 	authHandlerConfig.SetupAuth(e)
+	if errorExampleRoutesEnabled() {
+		setupErrorExampleRoutes(e, authHandlerConfig)
+	}
 	return nil
 }
 

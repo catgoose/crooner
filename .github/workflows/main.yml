@@ -28,19 +28,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: Build and test (original)
-        run: |
-          mkdir -p bin
-          go build -v -o bin/oauth-server ./cmd/oauth-server/
-          go build -v -o bin/app ./cmd/app/
-          go test -v ./...
-          cd simulate && go build -v -o ../bin/simulate .
+      - name: Build, test, generate docs, verify
+        run: make ci
 
       - name: Install Playwright browsers (tool)
-        run: cd simulate && go run github.com/playwright-community/playwright-go/cmd/playwright install --with-deps
+        run: make install-playwright
 
       - name: Run PKCE simulation
-        run: ./scripts/run-pkce-sim.sh
+        run: make pkce-sim
 
       - name: Save go.mod and go.sum
         run: |
@@ -68,12 +63,7 @@ jobs:
           go mod tidy
 
       - name: Build and test (updated)
-        run: |
-          mkdir -p bin
-          go build -v -o bin/oauth-server ./cmd/oauth-server/
-          go build -v -o bin/app ./cmd/app/
-          go test -v ./...
-          cd simulate && go build -v -o ../bin/simulate .
+        run: make ci
 
       - name: Check for dependency changes
         id: check-deps

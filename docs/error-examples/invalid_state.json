@@ -1,0 +1,7 @@
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#invalid_state",
+  "title": "Invalid state",
+  "detail": "invalid state format",
+  "instance": "http://localhost:8080/__error_examples__/invalid_state",
+  "status": 400
+}

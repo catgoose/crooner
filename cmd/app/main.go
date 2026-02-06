@@ -59,6 +59,9 @@ func main() {
 		LoginURLRedirect:  baseURL + "/",
 		LogoutURLRedirect: baseURL + "/",
 	}
+	if os.Getenv("GEN_ERROR_EXAMPLES") == "1" {
+		params.ErrorConfig = &crooner.ErrorConfig{ShowDetails: true}
+	}
 	if err := crooner.NewAuthConfig(context.Background(), e, params); err != nil {
 		log.Fatalf("auth config: %v", err)
 	}

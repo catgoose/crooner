@@ -1,0 +1,7 @@
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#invalid_request",
+  "title": "Invalid request",
+  "detail": "nonce mismatch",
+  "instance": "http://localhost:8080/__error_examples__/invalid_request",
+  "status": 400
+}

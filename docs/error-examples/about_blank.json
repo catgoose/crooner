@@ -1,0 +1,7 @@
+{
+  "type": "about:blank",
+  "title": "unknown",
+  "detail": "unknown",
+  "instance": "http://localhost:8080/__error_examples__/about_blank",
+  "status": 400
+}
