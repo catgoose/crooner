@@ -1,6 +1,6 @@
 module github.com/catgoose/crooner
 
-go 1.25.6
+go 1.25.7
 
 require (
 	github.com/alexedwards/scs/v2 v2.9.0
