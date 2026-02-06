@@ -10,6 +10,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/coreos/go-oidc"
 	"github.com/labstack/echo/v4"
@@ -123,19 +124,20 @@ type SecurityHeadersConfig struct {
 
 // AuthConfig is the runtime config built by NewAuthConfig; it holds OAuth2/OIDC and security settings.
 type AuthConfig struct {
-	OAuth2Config      *oauth2.Config         // OAuth2 configuration
-	Provider          *oidc.Provider         // OIDC Provider for Azure AD
-	Verifier          *oidc.IDTokenVerifier  // Verifier to verify ID tokens
-	AuthRoutes        *AuthRoutes            // Routes for authentication
-	TenantID          string                 // Azure AD Tenant ID
-	LogoutURLRedirect string                 // URL to redirect after logout
-	LoginURLRedirect  string                 // URL to redirect after login (fallback when state decode fails)
-	CookieName        string                 // Reserved for custom SessionManager; built-in flow uses SessionManager.GetCookieName()
-	SessionSecurity   *SessionSecurityConfig // Reserved for custom SessionManager; built-in flow uses SessionConfig
-	URLValidation     *URLValidationConfig   // URL validation configuration
-	ErrorConfig       *ErrorConfig           // Error handling configuration
-	SecurityHeaders   *SecurityHeadersConfig // Security headers configuration
-	UserClaim         string                 // Claim name for session user (default "email"); use "preferred_username" or "upn" if email absent
+	OAuth2Config       *oauth2.Config         // OAuth2 configuration
+	Provider           *oidc.Provider         // OIDC Provider for Azure AD
+	Verifier           *oidc.IDTokenVerifier  // Verifier to verify ID tokens
+	AuthRoutes         *AuthRoutes            // Routes for authentication
+	TenantID           string                 // Azure AD Tenant ID
+	LogoutURLRedirect  string                 // URL to redirect after logout
+	LoginURLRedirect   string                 // URL to redirect after login (fallback when state decode fails)
+	EndSessionEndpoint string                 // OIDC end_session_endpoint (when IssuerURL is set and discovery provides it)
+	CookieName         string                 // Reserved for custom SessionManager; built-in flow uses SessionManager.GetCookieName()
+	SessionSecurity    *SessionSecurityConfig // Reserved for custom SessionManager; built-in flow uses SessionConfig
+	URLValidation      *URLValidationConfig   // URL validation configuration
+	ErrorConfig        *ErrorConfig           // Error handling configuration
+	SecurityHeaders    *SecurityHeadersConfig // Security headers configuration
+	UserClaim          string                 // Claim name for session user (default "email"); use "preferred_username" or "upn" if email absent
 }
 
 // AuthConfigParams is the input for NewAuthConfig; do not reuse as runtime config.
@@ -208,6 +210,7 @@ type oidcDiscovery struct {
 	Issuer                string   `json:"issuer"`
 	AuthorizationEndpoint string   `json:"authorization_endpoint"`
 	TokenEndpoint         string   `json:"token_endpoint"`
+	EndSessionEndpoint    string   `json:"end_session_endpoint"`
 	JWKSURI               string   `json:"jwks_uri"`
 	ResponseTypes         []string `json:"response_types_supported"`
 	ScopesSupported       []string `json:"scopes_supported"`
@@ -244,6 +247,7 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 
 	var provider *oidc.Provider
 	var oauth2Endpoint oauth2.Endpoint
+	var endSessionEndpoint string
 	tenantID := params.TenantID
 
 	if params.IssuerURL != "" {
@@ -253,7 +257,9 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		if err != nil {
 			return &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
 		}
-		discovery, err := fetchOIDCDiscovery(ctx, issuerURL)
+		discoveryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		discovery, err := fetchOIDCDiscovery(discoveryCtx, issuerURL)
 		if err != nil {
 			return &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
 		}
@@ -261,6 +267,7 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 			AuthURL:  discovery.AuthorizationEndpoint,
 			TokenURL: discovery.TokenEndpoint,
 		}
+		endSessionEndpoint = discovery.EndSessionEndpoint
 	} else {
 		var err error
 		provider, err = oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
@@ -303,18 +310,19 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 			RedirectURL:  params.RedirectURL,
 			Scopes:       scopes,
 		},
-		Provider:          provider,
-		Verifier:          provider.Verifier(&oidc.Config{ClientID: params.ClientID}),
-		TenantID:          tenantID,
-		LogoutURLRedirect: params.LogoutURLRedirect,
-		LoginURLRedirect:  params.LoginURLRedirect,
-		AuthRoutes:        params.AuthRoutes,
-		CookieName:        params.CookieName,
-		SessionSecurity:   params.SessionSecurity,
-		URLValidation:     params.URLValidation,
-		ErrorConfig:       params.ErrorConfig,
-		SecurityHeaders:   params.SecurityHeaders,
-		UserClaim:         params.UserClaim,
+		Provider:           provider,
+		Verifier:           provider.Verifier(&oidc.Config{ClientID: params.ClientID}),
+		TenantID:           tenantID,
+		LogoutURLRedirect:  params.LogoutURLRedirect,
+		LoginURLRedirect:   params.LoginURLRedirect,
+		EndSessionEndpoint: endSessionEndpoint,
+		AuthRoutes:         params.AuthRoutes,
+		CookieName:         params.CookieName,
+		SessionSecurity:    params.SessionSecurity,
+		URLValidation:      params.URLValidation,
+		ErrorConfig:        params.ErrorConfig,
+		SecurityHeaders:    params.SecurityHeaders,
+		UserClaim:          params.UserClaim,
 	}
 	authHandlerConfig := &AuthHandlerConfig{
 		AuthConfig:         authConfig,
