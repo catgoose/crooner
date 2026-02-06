@@ -40,6 +40,7 @@ func TestHandleError_NoShowDetails(t *testing.T) {
 	a := minimalAuthHandlerConfig(newMapSessionManager())
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "example.com"
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
@@ -68,6 +69,9 @@ func TestHandleError_NoShowDetails(t *testing.T) {
 	}
 	if resp.Type != "about:blank" {
 		t.Errorf("Type = %q, want about:blank", resp.Type)
+	}
+	if want := "http://example.com/"; resp.Instance != want {
+		t.Errorf("Instance = %q, want %q", resp.Instance, want)
 	}
 }
 
@@ -122,6 +126,136 @@ func TestHandleError_SessionError_SetsTypeAndExtensions(t *testing.T) {
 	}
 	if resp.Reason != ReasonNotFound {
 		t.Errorf("Reason = %q", resp.Reason)
+	}
+}
+
+func TestHandleError_AuthError_SetsTypeAndExtensions(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 500, "msg", &AuthError{Op: "VerifyIDToken", Reason: "bad token", Err: nil})
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeAuth {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeAuth)
+	}
+	if resp.Title != "Authentication error" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Op != "VerifyIDToken" {
+		t.Errorf("Op = %q", resp.Op)
+	}
+	if resp.Reason != "bad token" {
+		t.Errorf("Reason = %q", resp.Reason)
+	}
+}
+
+func TestHandleError_ConfigError_SetsTypeAndExtensions(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 400, "msg", &ConfigError{Field: "RedirectURL", Reason: "invalid URL", Err: nil})
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeConfig {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeConfig)
+	}
+	if resp.Title != "Configuration error" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Field != "RedirectURL" {
+		t.Errorf("Field = %q", resp.Field)
+	}
+	if resp.Reason != "invalid URL" {
+		t.Errorf("Reason = %q", resp.Reason)
+	}
+}
+
+func TestHandleError_ChallengeError_SetsType(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 500, "Failed to generate state", &ChallengeError{Op: "GenerateState", Err: nil})
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeChallenge {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeChallenge)
+	}
+	if resp.Title != "Challenge generation failed" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+}
+
+func TestHandleError_InvalidState_SetsType(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 400, "Invalid state format", ErrInvalidStateFormat)
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeInvalidState {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeInvalidState)
+	}
+	if resp.Title != "Invalid state" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+}
+
+func TestHandleError_NonceMismatch_SetsTypeAndDetail(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 400, "Nonce mismatch", ErrNonceMismatch)
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeInvalidRequest {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeInvalidRequest)
+	}
+	if resp.Title != "Invalid request" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Detail != "Nonce mismatch" {
+		t.Errorf("Detail = %q", resp.Detail)
 	}
 }
 
