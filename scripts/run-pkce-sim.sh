@@ -14,10 +14,12 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$ROOT/bin"
-echo "Building PKCE simulation binaries to bin/..."
-go build -o "$ROOT/bin/oauth-server" ./cmd/oauth-server/
-go build -o "$ROOT/bin/app" ./cmd/app/
-(cd "$ROOT/simulate" && go build -o "$ROOT/bin/simulate" .)
+if [ -z "$SKIP_BUILD" ] || [ ! -f "$ROOT/bin/oauth-server" ] || [ ! -f "$ROOT/bin/app" ] || [ ! -f "$ROOT/bin/simulate" ]; then
+  echo "Building PKCE simulation binaries to bin/..."
+  go build -o "$ROOT/bin/oauth-server" ./cmd/oauth-server/
+  go build -o "$ROOT/bin/app" ./cmd/app/
+  (cd "$ROOT/simulate" && go build -o "$ROOT/bin/simulate" .)
+fi
 
 echo "Starting mock OIDC server on :$OAUTH_PORT..."
 "$ROOT/bin/oauth-server" -port="$OAUTH_PORT" & OAUTH_PID=$!

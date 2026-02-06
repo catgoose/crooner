@@ -43,3 +43,98 @@ Example: `{"type":".../errors.md#invalid_request","title":"Invalid request","det
 Used for any other error (Crooner sends `type: "about:blank"` in that case). Indicates an unknown or uncategorized error.
 
 Example: `{"type":"about:blank","title":"Authorization code not provided","detail":"Authorization code not provided","instance":"...","status":400}`
+
+## Generated example responses
+
+<!-- BEGIN GENERATED EXAMPLES -->
+
+### config
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#config",
+  "title": "Configuration error",
+  "detail": "config error for field \"RedirectURL\": invalid URL",
+  "instance": "http://localhost:8080/__error_examples__/config",
+  "reason": "invalid URL",
+  "field": "RedirectURL",
+  "status": 400
+}
+```
+
+### auth
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#auth",
+  "title": "Authentication error",
+  "detail": "auth error during VerifyIDToken: bad token",
+  "instance": "http://localhost:8080/__error_examples__/auth",
+  "reason": "bad token",
+  "op": "VerifyIDToken",
+  "status": 500
+}
+```
+
+### challenge
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#challenge",
+  "title": "Challenge generation failed",
+  "detail": "challenge error during GenerateState: <nil>",
+  "instance": "http://localhost:8080/__error_examples__/challenge",
+  "status": 500
+}
+```
+
+### session
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#session",
+  "title": "Session error",
+  "detail": "session error for key \"code_verifier\": not found",
+  "instance": "http://localhost:8080/__error_examples__/session",
+  "key": "code_verifier",
+  "reason": "not found",
+  "status": 400
+}
+```
+
+### invalid_state
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#invalid_state",
+  "title": "Invalid state",
+  "detail": "invalid state format",
+  "instance": "http://localhost:8080/__error_examples__/invalid_state",
+  "status": 400
+}
+```
+
+### invalid_request
+
+```json
+{
+  "type": "https://github.com/catgoose/crooner/blob/main/docs/errors.md#invalid_request",
+  "title": "Invalid request",
+  "detail": "nonce mismatch",
+  "instance": "http://localhost:8080/__error_examples__/invalid_request",
+  "status": 400
+}
+```
+
+### about_blank
+
+```json
+{
+  "type": "about:blank",
+  "title": "unknown",
+  "detail": "unknown",
+  "instance": "http://localhost:8080/__error_examples__/about_blank",
+  "status": 400
+}
+```
+<!-- END GENERATED EXAMPLES -->
