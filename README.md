@@ -30,6 +30,8 @@
       - [Available Helpers](#available-helpers)
       - [Usage Example](#usage-example)
     - [Error Types](#error-types)
+  - [Development and the Makefile (You Gotta Be Right Next to Me)](#development-and-the-makefile-you-gotta-be-right-next-to-me)
+    - [About the example errors in docs](#about-the-example-errors-in-docs)
   - [Testing (You Gotta Be Right Next to Me)](#testing-you-gotta-be-right-next-to-me)
   - [Driving Crooner Authentication Flow (Don't Let Them Make It Look Fake)](#driving-crooner-authentication-flow-dont-let-them-make-it-look-fake)
     - [How the Crooner Keeps You on the Road](#how-the-crooner-keeps-you-on-the-road)
@@ -507,17 +509,34 @@ When something goes wrong, the Crooner don't leave you guessing. We use typed er
 
 That's for when you're driving the Crooner yourself—your code, your handlers. When the Crooner hits a pothole on login, callback, or logout, he don't hand you some fake error—he gives you the real deal. The **built-in auth routes** respond with **RFC 7807 / RFC 9457 problem details**: JSON with `type`, `title`, `status`, and optional `detail`, plus extensions where it matters (e.g. session `key`, `reason`). **Content-Type** is `application/problem+json`. Every `type` URI in the response links to real documentation so you know what went wrong. See [docs/errors.md](docs/errors.md) for the full list and when each type is returned. Don't let them make it look fake.
 
-| type URI | Meaning |
-|----------|--------|
-| [docs/errors.md#config](docs/errors.md#config) | Configuration error |
-| [docs/errors.md#auth](docs/errors.md#auth) | Auth / token / ID token error |
-| [docs/errors.md#challenge](docs/errors.md#challenge) | PKCE or state generation error |
-| [docs/errors.md#session](docs/errors.md#session) | Session get/set or type error (includes `key`, `reason`) |
-| [docs/errors.md#invalid_state](docs/errors.md#invalid_state) | Invalid OAuth state payload |
+| type URI                                                         | Meaning                                                      |
+| ---------------------------------------------------------------- | ------------------------------------------------------------ |
+| [docs/errors.md#config](docs/errors.md#config)                   | Configuration error                                          |
+| [docs/errors.md#auth](docs/errors.md#auth)                       | Auth / token / ID token error                                |
+| [docs/errors.md#challenge](docs/errors.md#challenge)             | PKCE or state generation error                               |
+| [docs/errors.md#session](docs/errors.md#session)                 | Session get/set or type error (includes `key`, `reason`)     |
+| [docs/errors.md#invalid_state](docs/errors.md#invalid_state)     | Invalid OAuth state payload                                  |
 | [docs/errors.md#invalid_request](docs/errors.md#invalid_request) | Invalid callback request (e.g. missing code, nonce mismatch) |
-| `about:blank` | Other or unknown error |
+| `about:blank`                                                    | Other or unknown error                                       |
 
 Don't let them make it look fake. Handle your errors.
+
+## Development and the Makefile (You Gotta Be Right Next to Me)
+
+| Target                    | What it does                                                                                                                                                                                                   |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `help`                    | Default. Lists the real targets—no fake menus.                                                                                                                                                                 |
+| `build`                   | Builds `bin/oauth-server`, `bin/app`, `bin/simulate`.                                                                                                                                                          |
+| `test`                    | Runs `go test ./...`.                                                                                                                                                                                          |
+| `generate-error-examples` | Runs `scripts/gen-error-examples.sh`: starts app and oauth-server, curls `__error_examples__/*`, writes `docs/error-examples/*.json` and rewrites the "Generated example responses" block in `docs/errors.md`. |
+| `verify-docs`             | `git diff --exit-code docs/` — fails if docs are dirty so CI keeps decals real.                                                                                                                                |
+| `ci`                      | `build`, `test`, `generate-error-examples`, `verify-docs`.                                                                                                                                                     |
+| `install-playwright`      | Install Playwright browsers for `simulate`. You gotta be right next to the browser.                                                                                                                            |
+| `pkce-sim`                | Depends on `build`; runs the PKCE simulation script.                                                                                                                                                           |
+
+### About the example errors in docs
+
+**docs/errors.md** lists every problem-detail type (config, auth, challenge, session, invalid_state, invalid_request, about:blank), when each is returned, and the **Generated example responses** section. **docs/error-examples/\*.json** are live JSON samples for each type. They're generated—not hand-written. Run `make generate-error-examples` and the script hits the app's `__error_examples__` routes, writes those JSON files, then rewrites the markdown code blocks in `docs/errors.md` from them. The Crooner don't leave you with fake examples; the docs stay real. CI runs `generate-error-examples` and `verify-docs`, so if you change code that affects error responses and forget to regenerate, the build fails. Don't let them make it look fake.
 
 ## Testing (You Gotta Be Right Next to Me)
 
