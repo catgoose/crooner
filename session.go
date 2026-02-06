@@ -111,7 +111,7 @@ func AsSessionError(err error) (*SessionError, bool) {
 	return nil, false
 }
 
-// SessionErrorResponse creates a JSON-friendly response from a SessionError
+// SessionErrorResponse creates a JSON-friendly response from a SessionError for app-level use (e.g. your own routes). Auth routes use RFC 7807/9457 ProblemDetails instead.
 func SessionErrorResponse(err error) map[string]any {
 	if sessionErr, ok := AsSessionError(err); ok {
 		return map[string]any{

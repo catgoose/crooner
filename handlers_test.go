@@ -50,15 +50,24 @@ func TestHandleError_NoShowDetails(t *testing.T) {
 	if rec.Code != 500 {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
-	var resp ErrorResponse
+	if ct := rec.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Errorf("Content-Type = %q, want application/problem+json", ct)
+	}
+	var resp ProblemDetails
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if resp.Error != "test message" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Title != "test message" {
+		t.Errorf("Title = %q", resp.Title)
 	}
-	if resp.Details != "" {
-		t.Errorf("Details = %q, want empty", resp.Details)
+	if resp.Status != 500 {
+		t.Errorf("Status = %d", resp.Status)
+	}
+	if resp.Detail != "test message" {
+		t.Errorf("Detail = %q", resp.Detail)
+	}
+	if resp.Type != "about:blank" {
+		t.Errorf("Type = %q, want about:blank", resp.Type)
 	}
 }
 
@@ -78,15 +87,41 @@ func TestHandleError_ShowDetails(t *testing.T) {
 	if rec.Code != 400 {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
-	var resp ErrorResponse
+	var resp ProblemDetails
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if resp.Error != "bad request" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Title != "bad request" {
+		t.Errorf("Title = %q", resp.Title)
 	}
-	if resp.Details != "underlying error" {
-		t.Errorf("Details = %q", resp.Details)
+	if resp.Detail != "underlying error" {
+		t.Errorf("Detail = %q", resp.Detail)
+	}
+}
+
+func TestHandleError_SessionError_SetsTypeAndExtensions(t *testing.T) {
+	a := minimalAuthHandlerConfig(newMapSessionManager())
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/callback", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	err := a.handleError(c, 400, "Code verifier not found", &SessionError{Key: "code_verifier", Reason: ReasonNotFound})
+	if err != nil {
+		t.Fatalf("handleError: %v", err)
+	}
+	var resp ProblemDetails
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if resp.Type != problemTypeSession {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeSession)
+	}
+	if resp.Key != "code_verifier" {
+		t.Errorf("Key = %q", resp.Key)
+	}
+	if resp.Reason != ReasonNotFound {
+		t.Errorf("Reason = %q", resp.Reason)
 	}
 }
 
@@ -188,6 +223,30 @@ func TestLoginHandler_NoLoginURLRedirect_RedirectsToSlash(t *testing.T) {
 	}
 }
 
+func TestLoginHandler_InvalidRedirect_AbsoluteURL_RedirectsToSafeTarget(t *testing.T) {
+	sm := newMapSessionManager()
+	a := minimalAuthHandlerConfig(sm)
+	a.LoginURLRedirect = "https://example.com/landing"
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/login?redirect=https://evil.com/path", nil)
+	req.Host = "example.com"
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetPath("/login")
+	_ = a.loginHandler()(c)
+
+	if rec.Code != 302 {
+		t.Errorf("status = %d, want 302", rec.Code)
+	}
+	if rec.Header().Get("Location") != "https://example.com/landing" {
+		t.Errorf("Location = %q, want https://example.com/landing", rec.Header().Get("Location"))
+	}
+	_, err := GetString(sm, c, SessionKeyOAuthState)
+	if err == nil {
+		t.Error("invalid redirect should not store oauth_state in session")
+	}
+}
+
 func TestCallbackHandler_NoStateInSession_500(t *testing.T) {
 	sm := newMapSessionManager()
 	a := minimalAuthHandlerConfig(sm)
@@ -201,10 +260,13 @@ func TestCallbackHandler_NoStateInSession_500(t *testing.T) {
 	if rec.Code != 500 {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
-	var resp ErrorResponse
+	var resp ProblemDetails
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "Failed to get session" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Title != "Session error" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Detail != "Failed to get session" {
+		t.Errorf("Detail = %q", resp.Detail)
 	}
 }
 
@@ -274,10 +336,13 @@ func TestCallbackHandler_NoCodeVerifier_400(t *testing.T) {
 	if rec.Code != 400 {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
-	var resp ErrorResponse
+	var resp ProblemDetails
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "Code verifier not found" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Title != "Session error" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Detail != "Code verifier not found" {
+		t.Errorf("Detail = %q", resp.Detail)
 	}
 }
 
@@ -299,10 +364,16 @@ func TestCallbackHandler_EmptyCode_400(t *testing.T) {
 	if rec.Code != 400 {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
-	var resp ErrorResponse
+	var resp ProblemDetails
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "Authorization code not provided" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Type != problemTypeInvalidRequest {
+		t.Errorf("Type = %q, want %q", resp.Type, problemTypeInvalidRequest)
+	}
+	if resp.Title != "Invalid request" {
+		t.Errorf("Title = %q", resp.Title)
+	}
+	if resp.Detail != "Authorization code not provided" {
+		t.Errorf("Detail = %q", resp.Detail)
 	}
 }
 
@@ -321,10 +392,10 @@ func TestLogoutHandler_InvalidRedirectURL_400(t *testing.T) {
 	if rec.Code != 400 {
 		t.Errorf("status = %d, want 400", rec.Code)
 	}
-	var resp ErrorResponse
+	var resp ProblemDetails
 	_ = json.NewDecoder(rec.Body).Decode(&resp)
-	if resp.Error != "Invalid redirect URL" {
-		t.Errorf("Error = %q", resp.Error)
+	if resp.Title != "Invalid redirect URL" {
+		t.Errorf("Title = %q", resp.Title)
 	}
 }
 

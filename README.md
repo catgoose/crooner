@@ -493,6 +493,8 @@ func myHandler(c echo.Context) error {
 
 Robust error handling, any backend that implements `SessionManager`—the real deal, baby.
 
+Crooner does **not** store the OAuth2 access token or refresh token in the session by default. Only the user identifier (and any claims you map via `SessionValueClaims`) are persisted. If your app needs to call APIs on behalf of the user, you must persist tokens yourself (e.g. in session or a store) in a custom callback or post-login step.
+
 ### Error Types
 
 When something goes wrong, the Crooner don't leave you guessing. We use typed errors so you can check with `errors.As` or `errors.Is`:
@@ -502,6 +504,18 @@ When something goes wrong, the Crooner don't leave you guessing. We use typed er
 - **ChallengeError** — PKCE or state got messed up. Check with `crooner.IsChallengeError(err)` or `crooner.AsChallengeError(err)`.
 - **SessionError** — session get/set or wrong type (e.g. from `GetString`, `GetInt`, `GetBool`). Check with `crooner.IsSessionError(err)` or `crooner.AsSessionError(err)`.
 - **State decode errors** — invalid OAuth state (bad base64 or malformed payload). Use `errors.Is(err, crooner.ErrInvalidStateFormat)` or `errors.Is(err, crooner.ErrInvalidStateData)`.
+
+That's for when you're driving the Crooner yourself—your code, your handlers. When the Crooner hits a pothole on login, callback, or logout, he don't hand you some fake error—he gives you the real deal. The **built-in auth routes** respond with **RFC 7807 / RFC 9457 problem details**: JSON with `type`, `title`, `status`, and optional `detail`, plus extensions where it matters (e.g. session `key`, `reason`). **Content-Type** is `application/problem+json`. Every `type` URI in the response links to real documentation so you know what went wrong. See [docs/errors.md](docs/errors.md) for the full list and when each type is returned. Don't let them make it look fake.
+
+| type URI | Meaning |
+|----------|--------|
+| [docs/errors.md#config](docs/errors.md#config) | Configuration error |
+| [docs/errors.md#auth](docs/errors.md#auth) | Auth / token / ID token error |
+| [docs/errors.md#challenge](docs/errors.md#challenge) | PKCE or state generation error |
+| [docs/errors.md#session](docs/errors.md#session) | Session get/set or type error (includes `key`, `reason`) |
+| [docs/errors.md#invalid_state](docs/errors.md#invalid_state) | Invalid OAuth state payload |
+| [docs/errors.md#invalid_request](docs/errors.md#invalid_request) | Invalid callback request (e.g. missing code, nonce mismatch) |
+| `about:blank` | Other or unknown error |
 
 Don't let them make it look fake. Handle your errors.
 

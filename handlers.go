@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -122,11 +123,15 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 
 		receivedState := c.QueryParam("state")
 		if subtle.ConstantTimeCompare([]byte(receivedState), []byte(expectedState)) != 1 {
+			_ = a.SessionMgr.Delete(c, SessionKeyOAuthState)
+			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
 			return c.Redirect(http.StatusFound, loginRedirectURL(a.AuthRoutes, c.Request().RequestURI))
 		}
 
 		originalPath, err := DecodeStatePayload(expectedState)
 		if err != nil {
+			_ = a.SessionMgr.Delete(c, SessionKeyOAuthState)
+			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
 			if a.LoginURLRedirect != "" {
 				return c.Redirect(http.StatusFound, a.LoginURLRedirect)
 			}
@@ -143,14 +148,17 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 
 		codeVerifier, err := GetString(a.SessionMgr, c, SessionKeyCodeVerifier)
 		if err != nil {
+			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
 			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", err)
 		}
 		code := c.QueryParam("code")
 		if code == "" {
-			return a.handleError(c, http.StatusBadRequest, "Authorization code not provided", nil)
+			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
+			return a.handleError(c, http.StatusBadRequest, "Authorization code not provided", ErrAuthorizationCodeNotProvided)
 		}
 		token, err := a.ExchangeToken(c.Request().Context(), code, codeVerifier)
 		if err != nil {
+			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
 			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
 		}
 		if err := a.SessionMgr.Delete(c, SessionKeyCodeVerifier); err != nil {
@@ -171,8 +179,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err := a.SessionMgr.Delete(c, SessionKeyOAuthNonce); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear nonce", err)
 		}
-		if claimNonce, _ := claims["nonce"].(string); claimNonce != expectedNonce {
-			return a.handleError(c, http.StatusBadRequest, "Nonce mismatch", nil)
+		claimNonce, _ := claims["nonce"].(string)
+		if len(claimNonce) != len(expectedNonce) || subtle.ConstantTimeCompare([]byte(claimNonce), []byte(expectedNonce)) != 1 {
+			return a.handleError(c, http.StatusBadRequest, "Nonce mismatch", ErrNonceMismatch)
 		}
 		userVal := userClaimValue(claims, a.UserClaim)
 		if userVal == "" {
@@ -209,22 +218,92 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", err)
 		}
 
-		if a.TenantID == "" {
-			return c.Redirect(http.StatusFound, a.LogoutURLRedirect)
+		if a.EndSessionEndpoint != "" {
+			sep := "?"
+			if strings.Contains(a.EndSessionEndpoint, "?") {
+				sep = "&"
+			}
+			logoutURL := a.EndSessionEndpoint + sep + "post_logout_redirect_uri=" + url.QueryEscape(a.LogoutURLRedirect)
+			return c.Redirect(http.StatusFound, logoutURL)
 		}
-		logoutURL := fmt.Sprintf(
-			"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
-			a.TenantID,
-			url.QueryEscape(a.LogoutURLRedirect),
-		)
-		return c.Redirect(http.StatusFound, logoutURL)
+		if a.TenantID != "" {
+			logoutURL := fmt.Sprintf(
+				"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
+				a.TenantID,
+				url.QueryEscape(a.LogoutURLRedirect),
+			)
+			return c.Redirect(http.StatusFound, logoutURL)
+		}
+		return c.Redirect(http.StatusFound, a.LogoutURLRedirect)
 	}
 }
 
-// ErrorResponse represents a standard JSON error response for auth handlers.
-type ErrorResponse struct {
-	Error   string `json:"error"`
-	Details string `json:"details,omitempty"`
+const problemTypeBase = "https://github.com/catgoose/crooner/blob/main/docs/errors.md#"
+
+const (
+	problemTypeConfig         = problemTypeBase + "config"
+	problemTypeAuth           = problemTypeBase + "auth"
+	problemTypeChallenge      = problemTypeBase + "challenge"
+	problemTypeSession        = problemTypeBase + "session"
+	problemTypeInvalidState   = problemTypeBase + "invalid_state"
+	problemTypeInvalidRequest = problemTypeBase + "invalid_request"
+)
+
+var problemTypeTitle = map[string]string{
+	problemTypeConfig:         "Configuration error",
+	problemTypeAuth:           "Authentication error",
+	problemTypeChallenge:      "Challenge generation failed",
+	problemTypeSession:        "Session error",
+	problemTypeInvalidState:   "Invalid state",
+	problemTypeInvalidRequest: "Invalid request",
+}
+
+var (
+	ErrAuthorizationCodeNotProvided = errors.New("authorization code not provided")
+	ErrNonceMismatch                = errors.New("nonce mismatch")
+)
+
+// ProblemDetails represents RFC 7807 / RFC 9457 problem details for HTTP API errors.
+// Auth handlers return this with Content-Type application/problem+json.
+type ProblemDetails struct {
+	Type     string `json:"type,omitempty"`
+	Title    string `json:"title"`
+	Detail   string `json:"detail,omitempty"`
+	Instance string `json:"instance,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+	Op       string `json:"op,omitempty"`
+	Field    string `json:"field,omitempty"`
+	Status   int    `json:"status"`
+}
+
+func problemTypeForErr(err error) string {
+	if err == nil {
+		return "about:blank"
+	}
+	var sessionErr *SessionError
+	if errors.As(err, &sessionErr) {
+		return problemTypeSession
+	}
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		return problemTypeAuth
+	}
+	var challengeErr *ChallengeError
+	if errors.As(err, &challengeErr) {
+		return problemTypeChallenge
+	}
+	var configErr *ConfigError
+	if errors.As(err, &configErr) {
+		return problemTypeConfig
+	}
+	if errors.Is(err, ErrInvalidStateFormat) || errors.Is(err, ErrInvalidStateData) {
+		return problemTypeInvalidState
+	}
+	if errors.Is(err, ErrAuthorizationCodeNotProvided) || errors.Is(err, ErrNonceMismatch) {
+		return problemTypeInvalidRequest
+	}
+	return "about:blank"
 }
 
 func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
@@ -232,12 +311,39 @@ func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message stri
 		c.Logger().Errorf("Auth error: %s - %v", message, err)
 	}
 
-	resp := ErrorResponse{
-		Error: message,
+	ptype := problemTypeForErr(err)
+	title := problemTypeTitle[ptype]
+	if title == "" {
+		title = message
+	}
+	problem := ProblemDetails{
+		Type:   ptype,
+		Title:  title,
+		Detail: message,
+		Status: status,
 	}
 	if a.ErrorConfig != nil && a.ErrorConfig.ShowDetails && err != nil {
-		resp.Details = err.Error()
+		problem.Detail = err.Error()
+	}
+	if req := c.Request(); req != nil && req.URL != nil {
+		problem.Instance = c.Scheme() + "://" + req.Host + req.URL.RequestURI()
+	}
+	var sessionErr *SessionError
+	if errors.As(err, &sessionErr) {
+		problem.Key = sessionErr.Key
+		problem.Reason = sessionErr.Reason
+	}
+	var authErr *AuthError
+	if errors.As(err, &authErr) {
+		problem.Op = authErr.Op
+		problem.Reason = authErr.Reason
+	}
+	var configErr *ConfigError
+	if errors.As(err, &configErr) {
+		problem.Field = configErr.Field
+		problem.Reason = configErr.Reason
 	}
 
-	return c.JSON(status, resp)
+	c.Response().Header().Set("Content-Type", "application/problem+json")
+	return c.JSON(status, problem)
 }
