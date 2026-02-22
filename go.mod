@@ -8,7 +8,6 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.3
 	github.com/labstack/echo/v4 v4.15.0
 	golang.org/x/oauth2 v0.35.0
-	gopkg.in/go-jose/go-jose.v2 v2.6.3
 )
 
 require (
