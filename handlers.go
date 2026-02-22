@@ -3,7 +3,6 @@ package crooner
 import (
 	"crypto/subtle"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -227,14 +226,6 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 				sep = "&"
 			}
 			logoutURL := a.EndSessionEndpoint + sep + "post_logout_redirect_uri=" + url.QueryEscape(a.LogoutURLRedirect)
-			return c.Redirect(http.StatusFound, logoutURL)
-		}
-		if a.TenantID != "" {
-			logoutURL := fmt.Sprintf(
-				"https://login.microsoftonline.com/%s/oauth2/v2.0/logout?post_logout_redirect_uri=%s",
-				a.TenantID,
-				url.QueryEscape(a.LogoutURLRedirect),
-			)
 			return c.Redirect(http.StatusFound, logoutURL)
 		}
 		return c.Redirect(http.StatusFound, a.LogoutURLRedirect)

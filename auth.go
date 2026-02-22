@@ -15,7 +15,6 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/microsoft"
 )
 
 // AuthError represents an error related to authentication or OIDC operations.
@@ -125,10 +124,9 @@ type SecurityHeadersConfig struct {
 // AuthConfig is the runtime config built by NewAuthConfig; it holds OAuth2/OIDC and security settings.
 type AuthConfig struct {
 	OAuth2Config       *oauth2.Config         // OAuth2 configuration
-	Provider           *oidc.Provider         // OIDC Provider for Azure AD
+	Provider           *oidc.Provider         // OIDC Provider
 	Verifier           *oidc.IDTokenVerifier  // Verifier to verify ID tokens
 	AuthRoutes         *AuthRoutes            // Routes for authentication
-	TenantID           string                 // Azure AD Tenant ID
 	LogoutURLRedirect  string                 // URL to redirect after logout
 	LoginURLRedirect   string                 // URL to redirect after login (fallback when state decode fails)
 	EndSessionEndpoint string                 // OIDC end_session_endpoint (when IssuerURL is set and discovery provides it)
@@ -153,7 +151,6 @@ type AuthConfigParams struct {
 	LoginURLRedirect   string
 	ClientID           string
 	RedirectURL        string
-	TenantID           string
 	ClientSecret       string
 	IssuerURL          string
 	UserClaim          string
@@ -245,37 +242,22 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		return err
 	}
 
-	var provider *oidc.Provider
-	var oauth2Endpoint oauth2.Endpoint
-	var endSessionEndpoint string
-	tenantID := params.TenantID
-
-	if params.IssuerURL != "" {
-		issuerURL := strings.TrimSuffix(params.IssuerURL, "/")
-		var err error
-		provider, err = oidc.NewProvider(ctx, issuerURL)
-		if err != nil {
-			return &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
-		}
-		discoveryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-		defer cancel()
-		discovery, err := fetchOIDCDiscovery(discoveryCtx, issuerURL)
-		if err != nil {
-			return &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
-		}
-		oauth2Endpoint = oauth2.Endpoint{
-			AuthURL:  discovery.AuthorizationEndpoint,
-			TokenURL: discovery.TokenEndpoint,
-		}
-		endSessionEndpoint = discovery.EndSessionEndpoint
-	} else {
-		var err error
-		provider, err = oidc.NewProvider(ctx, fmt.Sprintf("https://login.microsoftonline.com/%s/v2.0", params.TenantID))
-		if err != nil {
-			return &ConfigError{Field: "TenantID", Reason: "failed to initialize OIDC provider", Err: err}
-		}
-		oauth2Endpoint = microsoft.AzureADEndpoint(params.TenantID)
+	issuerURL := strings.TrimSuffix(params.IssuerURL, "/")
+	provider, err := oidc.NewProvider(ctx, issuerURL)
+	if err != nil {
+		return &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
 	}
+	discoveryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	discovery, err := fetchOIDCDiscovery(discoveryCtx, issuerURL)
+	if err != nil {
+		return &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
+	}
+	oauth2Endpoint := oauth2.Endpoint{
+		AuthURL:  discovery.AuthorizationEndpoint,
+		TokenURL: discovery.TokenEndpoint,
+	}
+	endSessionEndpoint := discovery.EndSessionEndpoint
 
 	scopes := []string{oidc.ScopeOpenID, "profile", "email"}
 	scopes = append(scopes, params.AdditionalScopes...)
@@ -309,7 +291,6 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 		},
 		Provider:           provider,
 		Verifier:           provider.Verifier(&oidc.Config{ClientID: params.ClientID}),
-		TenantID:           tenantID,
 		LogoutURLRedirect:  params.LogoutURLRedirect,
 		LoginURLRedirect:   params.LoginURLRedirect,
 		EndSessionEndpoint: endSessionEndpoint,
@@ -355,29 +336,14 @@ func validateAuthParams(params *AuthConfigParams) error {
 }
 
 func validateRequiredAuthParams(params *AuthConfigParams) error {
-	if params.IssuerURL != "" {
-		if params.ClientID == "" {
-			return &ConfigError{Field: "ClientID", Reason: "missing required parameter"}
-		}
-		if params.RedirectURL == "" {
-			return &ConfigError{Field: "RedirectURL", Reason: "missing required parameter"}
-		}
-		return nil
-	}
-	if params.TenantID == "" {
-		return &ConfigError{Field: "TenantID", Reason: "missing required parameter"}
-	}
-	if !isValidUUID(params.TenantID) {
-		return &ConfigError{Field: "TenantID", Reason: "invalid UUID format"}
+	if params.IssuerURL == "" {
+		return &ConfigError{Field: "IssuerURL", Reason: "missing required parameter"}
 	}
 	if params.ClientID == "" {
 		return &ConfigError{Field: "ClientID", Reason: "missing required parameter"}
 	}
-	if !isValidUUID(params.ClientID) {
-		return &ConfigError{Field: "ClientID", Reason: "invalid UUID format"}
-	}
-	if params.ClientSecret == "" {
-		return &ConfigError{Field: "ClientSecret", Reason: "missing required parameter"}
+	if params.RedirectURL == "" {
+		return &ConfigError{Field: "RedirectURL", Reason: "missing required parameter"}
 	}
 	return nil
 }
@@ -416,33 +382,6 @@ func validateAdditionalScopes(params *AuthConfigParams) error {
 		}
 	}
 	return nil
-}
-
-// isValidUUID checks if a string is a valid UUID
-func isValidUUID(uuid string) bool {
-	if len(uuid) != 36 {
-		return false
-	}
-
-	parts := strings.Split(uuid, "-")
-	if len(parts) != 5 {
-		return false
-	}
-
-	if len(parts[0]) != 8 || len(parts[1]) != 4 || len(parts[2]) != 4 || len(parts[3]) != 4 || len(parts[4]) != 12 {
-		return false
-	}
-
-	validChars := "0123456789abcdefABCDEF"
-	for _, part := range parts {
-		for _, char := range part {
-			if !strings.ContainsRune(validChars, char) {
-				return false
-			}
-		}
-	}
-
-	return true
 }
 
 // validateURL validates URL format
@@ -539,7 +478,7 @@ func getDefaultSessionSecurity() *SessionSecurityConfig {
 	}
 }
 
-// GetLoginURL constructs and returns the Azure AD login URL
+// GetLoginURL constructs and returns the OIDC login URL
 func (c *AuthConfig) GetLoginURL(state, codeChallenge, nonce string) string {
 	opts := []oauth2.AuthCodeOption{
 		oauth2.AccessTypeOffline,
