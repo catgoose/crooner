@@ -55,6 +55,7 @@ func main() {
 		AuthRoutes:        routes,
 		IssuerURL:         *issuerURL,
 		ClientID:          "crooner-test-client",
+		ClientSecret:      "mock",
 		RedirectURL:       *redirectURL,
 		LoginURLRedirect:  baseURL + "/",
 		LogoutURLRedirect: baseURL + "/",

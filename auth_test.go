@@ -3,6 +3,8 @@ package crooner
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -505,5 +507,106 @@ func TestGetLoginURL_WithNonce(t *testing.T) {
 	}
 	if parsed.Query().Get("nonce") != nonce {
 		t.Errorf("nonce = %q, want %q", parsed.Query().Get("nonce"), nonce)
+	}
+}
+
+func TestFetchOIDCDiscovery_Success(t *testing.T) {
+	discovery := `{
+		"issuer": "http://localhost",
+		"authorization_endpoint": "http://localhost/authorize",
+		"token_endpoint": "http://localhost/token",
+		"end_session_endpoint": "http://localhost/logout",
+		"jwks_uri": "http://localhost/jwks",
+		"response_types_supported": ["code"],
+		"scopes_supported": ["openid"]
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(discovery))
+	}))
+	defer srv.Close()
+
+	d, err := fetchOIDCDiscovery(context.Background(), srv.URL)
+	if err != nil {
+		t.Fatalf("fetchOIDCDiscovery: %v", err)
+	}
+	if d.AuthorizationEndpoint != "http://localhost/authorize" {
+		t.Errorf("AuthorizationEndpoint = %q", d.AuthorizationEndpoint)
+	}
+	if d.TokenEndpoint != "http://localhost/token" {
+		t.Errorf("TokenEndpoint = %q", d.TokenEndpoint)
+	}
+	if d.EndSessionEndpoint != "http://localhost/logout" {
+		t.Errorf("EndSessionEndpoint = %q", d.EndSessionEndpoint)
+	}
+}
+
+func TestFetchOIDCDiscovery_Non200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	_, err := fetchOIDCDiscovery(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("fetchOIDCDiscovery with 500 = nil error")
+	}
+	if !strings.Contains(err.Error(), "status 500") {
+		t.Errorf("err = %v, want status 500 mention", err)
+	}
+}
+
+func TestFetchOIDCDiscovery_BadJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("not json"))
+	}))
+	defer srv.Close()
+
+	_, err := fetchOIDCDiscovery(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("fetchOIDCDiscovery with bad JSON = nil error")
+	}
+}
+
+func TestFetchOIDCDiscovery_MissingEndpoints(t *testing.T) {
+	discovery := `{
+		"issuer": "http://localhost",
+		"jwks_uri": "http://localhost/jwks"
+	}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(discovery))
+	}))
+	defer srv.Close()
+
+	_, err := fetchOIDCDiscovery(context.Background(), srv.URL)
+	if err == nil {
+		t.Fatal("fetchOIDCDiscovery with missing endpoints = nil error")
+	}
+	if !strings.Contains(err.Error(), "missing") {
+		t.Errorf("err = %v, want 'missing' mention", err)
+	}
+}
+
+func TestGetDefaultSessionSecurity(t *testing.T) {
+	ss := getDefaultSessionSecurity()
+	if ss == nil {
+		t.Fatal("getDefaultSessionSecurity() = nil")
+	}
+	if !ss.HTTPOnly {
+		t.Error("HTTPOnly = false, want true")
+	}
+	if !ss.Secure {
+		t.Error("Secure = false, want true")
+	}
+	if ss.SameSite != http.SameSiteLaxMode {
+		t.Errorf("SameSite = %v, want LaxMode", ss.SameSite)
+	}
+	if ss.MaxAge != 3600 {
+		t.Errorf("MaxAge = %d, want 3600", ss.MaxAge)
+	}
+	if ss.Path != "/" {
+		t.Errorf("Path = %q, want /", ss.Path)
 	}
 }

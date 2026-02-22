@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/coreos/go-oidc"
+	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/microsoft"
@@ -298,9 +298,6 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 	}
 
 	clientSecret := params.ClientSecret
-	if params.IssuerURL != "" && clientSecret == "" {
-		clientSecret = "mock"
-	}
 
 	authConfig := &AuthConfig{
 		OAuth2Config: &oauth2.Config{
@@ -465,7 +462,13 @@ func validateURL(urlStr string) error {
 	return nil
 }
 
-// ValidateRedirectURL validates a redirect URL: format/scheme/host first (via validateURL), then optional URLValidationConfig (RequireHTTPS, AllowedSchemes, AllowedDomains).
+// ValidateRedirectURL validates an absolute redirect URL used in configuration
+// (e.g. RedirectURL, LogoutURLRedirect, LoginURLRedirect). It checks format,
+// scheme (http/https only), and host, then applies optional URLValidationConfig
+// constraints (RequireHTTPS, AllowedSchemes, AllowedDomains).
+//
+// For validating relative, same-origin paths after login (e.g. the ?redirect=
+// query parameter), use [ValidatePostLoginRedirect] instead.
 func ValidateRedirectURL(rawURL string, uv *URLValidationConfig) error {
 	if err := validateURL(rawURL); err != nil {
 		return fmt.Errorf("invalid URL format: %w", err)
@@ -495,10 +498,16 @@ func ValidateRedirectURL(rawURL string, uv *URLValidationConfig) error {
 	return nil
 }
 
-// ValidatePostLoginRedirect validates the post-login redirect target (originalPath).
-// It allows only same-origin relative paths: must start with "/" and not "//", and must not be an absolute URL.
-// Path is normalized (path.Clean) to prevent traversal; the returned safePath should be used for the redirect.
+// ValidatePostLoginRedirect validates a relative, same-origin path used as the
+// post-login redirect target (e.g. the ?redirect= query parameter or the path
+// encoded in the OAuth state). It requires a leading "/", rejects protocol-relative
+// ("//") and absolute URLs, and normalizes the path via path.Clean to prevent
+// directory traversal. The returned safePath should be used for the actual redirect.
+//
 // baseURL and config are reserved for future use (e.g. allowlisting absolute URLs).
+//
+// For validating absolute configuration URLs (e.g. RedirectURL, LogoutURLRedirect),
+// use [ValidateRedirectURL] instead.
 func ValidatePostLoginRedirect(originalPath string, baseURL string, config *URLValidationConfig) (safePath string, err error) {
 	if originalPath == "" {
 		return "/", nil
