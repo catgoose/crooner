@@ -12,7 +12,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/microsoft"
 )
 
 func TestUserClaimValue(t *testing.T) {
@@ -88,10 +87,9 @@ func minimalAuthHandlerConfig(sm SessionManager) *AuthHandlerConfig {
 			OAuth2Config: &oauth2.Config{
 				ClientID:    "client-id",
 				RedirectURL: "https://example.com/callback",
-				Endpoint:    microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
+				Endpoint:    oauth2.Endpoint{AuthURL: "https://example.com/authorize", TokenURL: "https://example.com/token"},
 			},
 			AuthRoutes:        &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"},
-			TenantID:          "00000000-0000-0000-0000-000000000000",
 			LogoutURLRedirect: "https://example.com/logout",
 			LoginURLRedirect:  "https://example.com/",
 			URLValidation:     nil,
@@ -599,7 +597,7 @@ func TestLogoutHandler_InvalidRedirectURL_400(t *testing.T) {
 	}
 }
 
-func TestLogoutHandler_Success_RedirectsToMicrosoftLogout(t *testing.T) {
+func TestLogoutHandler_Success_RedirectsToLogoutURL(t *testing.T) {
 	sm := newMapSessionManager()
 	a := minimalAuthHandlerConfig(sm)
 
@@ -614,13 +612,8 @@ func TestLogoutHandler_Success_RedirectsToMicrosoftLogout(t *testing.T) {
 		t.Errorf("status = %d, want 302", rec.Code)
 	}
 	loc := rec.Header().Get("Location")
-	expectedPrefix := "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/oauth2/v2.0/logout?post_logout_redirect_uri="
-	if !strings.HasPrefix(loc, expectedPrefix) {
-		t.Errorf("Location = %q", loc)
-	}
-	parsed, _ := url.Parse(loc)
-	if parsed.Query().Get("post_logout_redirect_uri") != "https://example.com/logout" {
-		t.Errorf("post_logout_redirect_uri = %q", parsed.Query().Get("post_logout_redirect_uri"))
+	if loc != "https://example.com/logout" {
+		t.Errorf("Location = %q, want https://example.com/logout", loc)
 	}
 }
 

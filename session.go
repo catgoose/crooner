@@ -1,5 +1,5 @@
 // Package crooner provides secure session management and authentication helpers for Go web applications.
-// It offers a flexible, config-first approach to session configuration, secure cookie handling, and integration with authentication providers such as Azure AD.
+// It offers a flexible, config-first approach to session configuration, secure cookie handling, and integration with OIDC-compliant authentication providers.
 // Main features include:
 //   - Secure, customizable session cookie management
 //   - Helpers for non-predictable cookie names

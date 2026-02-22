@@ -11,7 +11,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/microsoft"
 )
 
 func TestValidateRedirectURL_ValidURL_NilConfig(t *testing.T) {
@@ -243,9 +242,8 @@ func TestConfigError_IsConfigError_AsConfigError(t *testing.T) {
 
 func validAuthConfigParams() *AuthConfigParams {
 	return &AuthConfigParams{
-		TenantID:           "00000000-0000-0000-0000-000000000000",
-		ClientID:           "11111111-1111-1111-1111-111111111111",
-		ClientSecret:       "secret",
+		IssuerURL:          "https://accounts.example.com",
+		ClientID:           "my-client-id",
 		RedirectURL:        "https://example.com/callback",
 		LogoutURLRedirect:  "https://example.com/logout",
 		LoginURLRedirect:   "https://example.com/",
@@ -262,58 +260,16 @@ func validAuthConfigParams() *AuthConfigParams {
 	}
 }
 
-func TestNewAuthConfig_MissingTenantID(t *testing.T) {
+func TestNewAuthConfig_MissingIssuerURL(t *testing.T) {
 	params := validAuthConfigParams()
-	params.TenantID = ""
+	params.IssuerURL = ""
 	e := echo.New()
 	err := NewAuthConfig(context.Background(), e, params)
 	if err == nil {
-		t.Fatal("NewAuthConfig(missing TenantID) = nil")
+		t.Fatal("NewAuthConfig(missing IssuerURL) = nil")
 	}
 	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "TenantID" || ce.Reason != "missing required parameter" {
-		t.Errorf("NewAuthConfig = %v", err)
-	}
-}
-
-func TestNewAuthConfig_InvalidTenantID_NotUUID(t *testing.T) {
-	params := validAuthConfigParams()
-	params.TenantID = "not-a-uuid"
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
-	if err == nil {
-		t.Fatal("NewAuthConfig(invalid TenantID) = nil")
-	}
-	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "TenantID" || ce.Reason != "invalid UUID format" {
-		t.Errorf("NewAuthConfig = %v", err)
-	}
-}
-
-func TestNewAuthConfig_InvalidTenantID_WrongLength(t *testing.T) {
-	params := validAuthConfigParams()
-	params.TenantID = "00000000-0000-0000-0000-00000000000"
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
-	if err == nil {
-		t.Fatal("NewAuthConfig(TenantID wrong length) = nil")
-	}
-	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "TenantID" {
-		t.Errorf("NewAuthConfig = %v", err)
-	}
-}
-
-func TestNewAuthConfig_InvalidTenantID_InvalidChars(t *testing.T) {
-	params := validAuthConfigParams()
-	params.TenantID = "00000000-0000-0000-0000-00000000000x"
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
-	if err == nil {
-		t.Fatal("NewAuthConfig(TenantID invalid chars) = nil")
-	}
-	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "TenantID" {
+	if !errors.As(err, &ce) || ce.Field != "IssuerURL" || ce.Reason != "missing required parameter" {
 		t.Errorf("NewAuthConfig = %v", err)
 	}
 }
@@ -328,34 +284,6 @@ func TestNewAuthConfig_MissingClientID(t *testing.T) {
 	}
 	var ce *ConfigError
 	if !errors.As(err, &ce) || ce.Field != "ClientID" || ce.Reason != "missing required parameter" {
-		t.Errorf("NewAuthConfig = %v", err)
-	}
-}
-
-func TestNewAuthConfig_InvalidClientID(t *testing.T) {
-	params := validAuthConfigParams()
-	params.ClientID = "not-a-uuid"
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
-	if err == nil {
-		t.Fatal("NewAuthConfig(invalid ClientID) = nil")
-	}
-	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "ClientID" || ce.Reason != "invalid UUID format" {
-		t.Errorf("NewAuthConfig = %v", err)
-	}
-}
-
-func TestNewAuthConfig_MissingClientSecret(t *testing.T) {
-	params := validAuthConfigParams()
-	params.ClientSecret = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
-	if err == nil {
-		t.Fatal("NewAuthConfig(missing ClientSecret) = nil")
-	}
-	var ce *ConfigError
-	if !errors.As(err, &ce) || ce.Field != "ClientSecret" || ce.Reason != "missing required parameter" {
 		t.Errorf("NewAuthConfig = %v", err)
 	}
 }
@@ -463,7 +391,7 @@ func TestGetLoginURL_ContainsParams(t *testing.T) {
 		OAuth2Config: &oauth2.Config{
 			ClientID:    "client-id",
 			RedirectURL: "https://example.com/callback",
-			Endpoint:    microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
+			Endpoint:    oauth2.Endpoint{AuthURL: "https://example.com/authorize", TokenURL: "https://example.com/token"},
 		},
 	}
 	state := "my-state"
@@ -496,7 +424,7 @@ func TestGetLoginURL_WithNonce(t *testing.T) {
 		OAuth2Config: &oauth2.Config{
 			ClientID:    "client-id",
 			RedirectURL: "https://example.com/callback",
-			Endpoint:    microsoft.AzureADEndpoint("00000000-0000-0000-0000-000000000000"),
+			Endpoint:    oauth2.Endpoint{AuthURL: "https://example.com/authorize", TokenURL: "https://example.com/token"},
 		},
 	}
 	nonce := "my-nonce"

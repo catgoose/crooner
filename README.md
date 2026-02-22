@@ -46,19 +46,17 @@
 > You gotta give!
 > The hat and the cigar. You're driving with the Driving Crooner, baby.
 
-Crooner is an Azure AD OIDC/OAuth2 client for Go Echo apps. It handles PKCE login, callbacks, and session management with pluggable backends and secure defaults.
+Crooner is an OIDC/OAuth2 client for Go Echo apps. It handles PKCE login, callbacks, and session management with pluggable backends and secure defaults. Works with any OIDC-compliant provider—Azure AD, Google, Okta, Auth0, Keycloak, you name it.
 
 ## What Is This? Why Do People Hate It?
 
 I don't know. Some people hate this, James. I don't know what it is, but they fuckin' hate it. There's people that wanna kill me, James. But I gotta figure out how to make money on this thing. It's simply too good. Crooner is for Go web apps using Echo, and it's the real deal. Not like those other guys, with their fake decals and their fake logins. This is the real Crooner. The hat and the cigar.
 
-Ever want to authenticate with Azure in your Go project but MSAL has no examples for a hosted HTTP service? [MSAL Issue #468](https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/468)
-
 ## Features (Don't Try to Steal My Decals)
 
 What you get when you ride with the Crooner—none of this fake stuff:
 
-- **Azure AD PKCE/OIDC login** — the hat and the cigar
+- **PKCE/OIDC login for any provider** — the hat and the cigar
 - **Pluggable session management** (SCS, custom) — you pick who's in the car
 - **Configurable Content Security Policy (CSP)** — don't let them make it look fake
 - **Secure, non-guessable session cookies** — no decal theft
@@ -106,21 +104,21 @@ func LoadAppConfig() (*AppConfig, error) {
 	}
 	appName := "myApp" // or load from env/config
 
-	// Fill in your Azure AD and Crooner config
+	// Fill in your OIDC provider and Crooner config
 	croonerConfig := &crooner.AuthConfigParams{
-		ClientID:          os.Getenv("AZURE_CLIENT_ID"),
-		ClientSecret:      os.Getenv("AZURE_CLIENT_SECRET"),
-		TenantID:          os.Getenv("AZURE_TENANT_ID"),
-		RedirectURL:       os.Getenv("AZURE_REDIRECT_URL"),
-		LogoutURLRedirect: os.Getenv("AZURE_LOGOUT_REDIRECT_URL"),
-		LoginURLRedirect:  os.Getenv("AZURE_LOGIN_REDIRECT_URL"),
+		IssuerURL:         os.Getenv("OIDC_ISSUER_URL"),      // e.g. https://accounts.google.com, https://login.microsoftonline.com/{tenant}/v2.0
+		ClientID:          os.Getenv("OIDC_CLIENT_ID"),
+		ClientSecret:      os.Getenv("OIDC_CLIENT_SECRET"),   // optional for public clients
+		RedirectURL:       os.Getenv("OIDC_REDIRECT_URL"),
+		LogoutURLRedirect: os.Getenv("OIDC_LOGOUT_REDIRECT_URL"),
+		LoginURLRedirect:  os.Getenv("OIDC_LOGIN_REDIRECT_URL"),
 		AuthRoutes: &crooner.AuthRoutes{
 			Login:    "/login",
 			Logout:   "/logout",
 			Callback: "/callback",
 		},
 		SecurityHeaders: &crooner.SecurityHeadersConfig{
-			ContentSecurityPolicy:   "img-src 'self' data: https://login.microsoftonline.com;",
+			ContentSecurityPolicy:   "default-src 'self'",    // adjust for your OIDC provider's domains
 			XFrameOptions:           "DENY",
 			XContentTypeOptions:     "nosniff",
 			ReferrerPolicy:          "strict-origin-when-cross-origin",
@@ -204,7 +202,7 @@ Configure your security headers via `SecurityHeadersConfig`. Empty field? Croone
 params := &crooner.AuthConfigParams{
 	// ... other config ...
 	SecurityHeaders: &crooner.SecurityHeadersConfig{
-		ContentSecurityPolicy:   "img-src 'self' data: https://login.microsoftonline.com;",
+		ContentSecurityPolicy:   "default-src 'self'",    // adjust for your OIDC provider's domains
 		XFrameOptions:           "DENY",
 		XContentTypeOptions:     "nosniff",
 		ReferrerPolicy:          "strict-origin-when-cross-origin",
@@ -214,7 +212,7 @@ params := &crooner.AuthConfigParams{
 }
 ```
 
-The Crooner don't fake who's in the car. You pick which ID token claim rides shotgun as the session user—default's `"email"`. If your Azure AD app ain't giving you email, use `"preferred_username"` or `"upn"`:
+The Crooner don't fake who's in the car. You pick which ID token claim rides shotgun as the session user—default's `"email"`. If your provider ain't giving you email, use `"preferred_username"` or `"upn"`:
 
 ```go
 params := &crooner.AuthConfigParams{
@@ -460,7 +458,7 @@ if err != nil {
 cookieName := sessionMgr.GetCookieName()
 
 // Use cookieName in your middleware setup
-// e.g., e.Use(middleware.AzureClaims(cookieName))
+// e.g., e.Use(middleware.Claims(cookieName))
 ```
 
 Then your middleware and everything else use the real cookie name—no guessing, no fake decals.
