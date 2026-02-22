@@ -27,6 +27,9 @@ func userClaimValue(claims map[string]any, primary string) string {
 	if primary != "preferred_username" {
 		try = append(try, "preferred_username")
 	}
+	if primary != "upn" {
+		try = append(try, "upn")
+	}
 	for _, key := range try {
 		if v, ok := claims[key]; ok && v != nil {
 			if s, ok := v.(string); ok && s != "" {

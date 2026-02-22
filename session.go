@@ -85,16 +85,20 @@ func (s *SCSManager) RenewToken(c echo.Context) error {
 
 // SessionError represents an error related to session operations.
 type SessionError struct {
+	Err    error  // Optional wrapped error
 	Key    string // The session key involved
 	Reason string // A human-readable reason for the error
 }
 
 func (e *SessionError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("session error for key %q: %s: %v", e.Key, e.Reason, e.Err)
+	}
 	return fmt.Sprintf("session error for key %q: %s", e.Key, e.Reason)
 }
 
-// Unwrap returns nil since SessionError doesn't wrap another error
-func (e *SessionError) Unwrap() error { return nil }
+// Unwrap returns the wrapped error, if any.
+func (e *SessionError) Unwrap() error { return e.Err }
 
 // IsSessionError checks if an error is a SessionError
 func IsSessionError(err error) bool {

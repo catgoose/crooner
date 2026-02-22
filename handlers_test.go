@@ -15,6 +15,72 @@ import (
 	"golang.org/x/oauth2/microsoft"
 )
 
+func TestUserClaimValue(t *testing.T) {
+	tests := []struct {
+		name    string
+		claims  map[string]any
+		primary string
+		want    string
+	}{
+		{
+			name:    "direct match",
+			claims:  map[string]any{"email": "user@example.com"},
+			primary: "email",
+			want:    "user@example.com",
+		},
+		{
+			name:    "email fallback",
+			claims:  map[string]any{"email": "user@example.com"},
+			primary: "sub",
+			want:    "user@example.com",
+		},
+		{
+			name:    "preferred_username fallback",
+			claims:  map[string]any{"preferred_username": "jdoe"},
+			primary: "sub",
+			want:    "jdoe",
+		},
+		{
+			name:    "upn fallback",
+			claims:  map[string]any{"upn": "jdoe@corp.com"},
+			primary: "sub",
+			want:    "jdoe@corp.com",
+		},
+		{
+			name:    "no match returns empty",
+			claims:  map[string]any{"sub": "12345"},
+			primary: "nonexistent",
+			want:    "",
+		},
+		{
+			name:    "nil value skipped",
+			claims:  map[string]any{"email": nil, "preferred_username": "jdoe"},
+			primary: "email",
+			want:    "jdoe",
+		},
+		{
+			name:    "empty string value skipped",
+			claims:  map[string]any{"email": "", "upn": "jdoe@corp.com"},
+			primary: "email",
+			want:    "jdoe@corp.com",
+		},
+		{
+			name:    "primary is upn, direct match",
+			claims:  map[string]any{"upn": "jdoe@corp.com", "email": "jdoe@example.com"},
+			primary: "upn",
+			want:    "jdoe@corp.com",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := userClaimValue(tc.claims, tc.primary)
+			if got != tc.want {
+				t.Errorf("userClaimValue() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func minimalAuthHandlerConfig(sm SessionManager) *AuthHandlerConfig {
 	return &AuthHandlerConfig{
 		SessionMgr: sm,
@@ -555,5 +621,28 @@ func TestLogoutHandler_Success_RedirectsToMicrosoftLogout(t *testing.T) {
 	parsed, _ := url.Parse(loc)
 	if parsed.Query().Get("post_logout_redirect_uri") != "https://example.com/logout" {
 		t.Errorf("post_logout_redirect_uri = %q", parsed.Query().Get("post_logout_redirect_uri"))
+	}
+}
+
+func TestSetupAuth_RegistersRoutes(t *testing.T) {
+	sm := newMapSessionManager()
+	a := minimalAuthHandlerConfig(sm)
+	a.SecurityHeaders = &SecurityHeadersConfig{ContentSecurityPolicy: "default-src 'self'"}
+	e := echo.New()
+	a.SetupAuth(e)
+
+	routeMap := make(map[string]string)
+	for _, r := range e.Routes() {
+		routeMap[r.Method+":"+r.Path] = r.Path
+	}
+
+	if _, ok := routeMap["GET:/login"]; !ok {
+		t.Error("GET /login route not registered")
+	}
+	if _, ok := routeMap["GET:/callback"]; !ok {
+		t.Error("GET /callback route not registered")
+	}
+	if _, ok := routeMap["POST:/logout"]; !ok {
+		t.Error("POST /logout route not registered")
 	}
 }
