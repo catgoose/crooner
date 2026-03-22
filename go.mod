@@ -1,4 +1,4 @@
-module github.com/catgoose/crooner/v2
+module github.com/catgoose/crooner
 
 go 1.26.1
 
