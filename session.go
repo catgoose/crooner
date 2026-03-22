@@ -146,6 +146,7 @@ const (
 	SessionKeyOAuthState   = "oauth_state"
 	SessionKeyCodeVerifier = "code_verifier"
 	SessionKeyOAuthNonce   = "oauth_nonce"
+	SessionKeyCSRFToken    = "csrf_token"
 )
 
 func getSessionTyped[T any](sm SessionManager, c echo.Context, key string, zero T, check func(any) (T, bool)) (T, error) {
@@ -164,6 +165,23 @@ func getSessionTyped[T any](sm SessionManager, c echo.Context, key string, zero 
 // Returns a *SessionError if the key is missing or the value is not a string.
 func GetString(sm SessionManager, c echo.Context, key string) (string, error) {
 	return getSessionTyped(sm, c, key, "", func(a any) (string, bool) { s, ok := a.(string); return s, ok })
+}
+
+// GetOrCreateCSRFToken returns the session CSRF token, generating and storing it if absent.
+// Use after authentication (e.g. in logout handler or when exposing the token to the client).
+func GetOrCreateCSRFToken(sm SessionManager, c echo.Context) (string, error) {
+	token, err := GetString(sm, c, SessionKeyCSRFToken)
+	if err == nil && token != "" {
+		return token, nil
+	}
+	token, err = GenerateState()
+	if err != nil {
+		return "", err
+	}
+	if err := sm.Set(c, SessionKeyCSRFToken, token); err != nil {
+		return "", err
+	}
+	return token, nil
 }
 
 // GetInt retrieves an int value from the session by key.

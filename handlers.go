@@ -58,6 +58,9 @@ func RequireAuth(sm SessionManager, routes *AuthRoutes) echo.MiddlewareFunc {
 func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
 	e.Use(SecurityHeadersMiddleware(a.SecurityHeaders))
 	e.Use(RequireAuth(a.SessionMgr, a.AuthRoutes))
+	if a.CSRF != nil {
+		e.Use(CSRFTokenResponseHeader(a.SessionMgr, a.CSRF.HeaderName))
+	}
 
 	routes := a.AuthRoutes
 	e.GET(routes.Login, a.loginHandler())
@@ -200,6 +203,9 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 		if err := SaveSessionValueClaims(a.SessionMgr, c, claims, a.SessionValueClaims); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
 		}
+		if _, err := GetOrCreateCSRFToken(a.SessionMgr, c); err != nil {
+			return a.handleError(c, http.StatusInternalServerError, "Failed to create CSRF token", err)
+		}
 		baseURL := c.Scheme() + "://" + c.Request().Host
 		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
 		if err != nil {
@@ -212,6 +218,19 @@ func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
 // logoutHandler creates a handler function for the logout route
 func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 	return func(c echo.Context) error {
+		if a.CSRF != nil && a.CSRF.EnableLogoutCSRF {
+			expected, err := GetString(a.SessionMgr, c, SessionKeyCSRFToken)
+			if err != nil {
+				return a.handleError(c, http.StatusForbidden, "CSRF token not found", err)
+			}
+			received := c.Request().Header.Get(a.CSRF.HeaderName)
+			if received == "" {
+				received = c.FormValue(a.CSRF.FormFieldName)
+			}
+			if len(received) != len(expected) || subtle.ConstantTimeCompare([]byte(received), []byte(expected)) != 1 {
+				return a.handleError(c, http.StatusForbidden, "Invalid CSRF token", nil)
+			}
+		}
 		if err := a.SessionMgr.ClearInvalidate(c); err != nil {
 			return a.handleError(c, http.StatusInternalServerError, "Failed to clear/invalidate session", err)
 		}

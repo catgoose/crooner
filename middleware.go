@@ -41,3 +41,19 @@ func SecurityHeadersMiddleware(cfg *SecurityHeadersConfig) echo.MiddlewareFunc {
 		}
 	}
 }
+
+// CSRFTokenResponseHeader returns Echo middleware that sets the CSRF token on the response
+// when the session has an authenticated user. Use responseHeaderName (e.g. "X-CSRF-Token")
+// so the client can read it and send it on state-changing requests.
+func CSRFTokenResponseHeader(sm SessionManager, responseHeaderName string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if _, err := GetString(sm, c, SessionKeyUser); err == nil {
+				if token, err := GetOrCreateCSRFToken(sm, c); err == nil {
+					c.Response().Header().Set(responseHeaderName, token)
+				}
+			}
+			return next(c)
+		}
+	}
+}

@@ -274,6 +274,38 @@ func TestGetBool_InvalidType(t *testing.T) {
 	}
 }
 
+func TestGetOrCreateCSRFToken_CreatesWhenMissing(t *testing.T) {
+	sm := newMapSessionManager()
+	c := echoContext()
+	token, err := GetOrCreateCSRFToken(sm, c)
+	if err != nil {
+		t.Fatalf("GetOrCreateCSRFToken: %v", err)
+	}
+	if token == "" {
+		t.Error("GetOrCreateCSRFToken returned empty token")
+	}
+	stored, err := GetString(sm, c, SessionKeyCSRFToken)
+	if err != nil {
+		t.Fatalf("GetString(csrf_token): %v", err)
+	}
+	if stored != token {
+		t.Errorf("stored token = %q, want %q", stored, token)
+	}
+}
+
+func TestGetOrCreateCSRFToken_ReturnsExisting(t *testing.T) {
+	sm := newMapSessionManager()
+	c := echoContext()
+	_ = sm.Set(c, SessionKeyCSRFToken, "existing-token")
+	token, err := GetOrCreateCSRFToken(sm, c)
+	if err != nil {
+		t.Fatalf("GetOrCreateCSRFToken: %v", err)
+	}
+	if token != "existing-token" {
+		t.Errorf("GetOrCreateCSRFToken = %q, want existing-token", token)
+	}
+}
+
 func TestSaveSessionValueClaims_NilValueClaims(t *testing.T) {
 	sm := newMapSessionManager()
 	c := echoContext()

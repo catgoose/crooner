@@ -443,6 +443,35 @@ cfg.Lifetime = 24 * time.Hour // 1 day is a good default
 - Regenerate the session on login or privilege change—fresh decals.
 - The logout route is **POST** only so some fake link can't boot you. Use a form with `method="post"` and `action="/logout"` (or a button that submits it) for your logout button.
 
+### CSRF (Cross-Site Request Forgery)
+
+The OAuth login flow is protected by the `state` parameter (stored in session and validated on callback). For **logout** and your own state-changing routes, Crooner supports per-session CSRF tokens.
+
+- **Logout:** When `CSRFConfig.EnableLogoutCSRF` is true (default), `POST /logout` requires a valid CSRF token in the request. Send it in the header `X-CSRF-Token` or in a form field `csrf_token`.
+- **Getting the token:** After login, a token is created and stored in the session. Use `crooner.GetOrCreateCSRFToken(sessionMgr, c)` in your handlers or templates to render it in forms (e.g. `<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">`). When you call `NewAuthConfig`, Crooner also sets the token on the **response header** `X-CSRF-Token` for every authenticated request so JavaScript (e.g. `fetch`) can read it and send it on subsequent POST/PUT/PATCH/DELETE requests.
+- **Your own POST routes:** Add the optional `crooner.CSRF(sessionMgr, opts...)` middleware to protect POST/PUT/PATCH/DELETE. Use `CSRFExemptPaths(paths)` to skip validation for specific path prefixes (e.g. webhooks). The same token from the header or form is validated against the session.
+
+Example logout form with token (template):
+
+```go
+// In your handler: pass token to template
+token, _ := crooner.GetOrCreateCSRFToken(sessionMgr, c)
+// template: <form method="post" action="/logout">
+//   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+//   <button type="submit">Log out</button>
+// </form>
+```
+
+Example with JavaScript (read token from response header, send on fetch):
+
+```javascript
+// After any GET that returns 200, the response may include X-CSRF-Token
+const token = response.headers.get('X-CSRF-Token');
+fetch('/logout', { method: 'POST', headers: { 'X-CSRF-Token': token } });
+```
+
+To disable logout CSRF (e.g. during migration), set `params.CSRF = &crooner.CSRFConfig{EnableLogoutCSRF: false}` (or set `HeaderName` / `FormFieldName` if you use different names).
+
 ## Retrieving the Session Cookie Name
 
 Sometimes the cookie name is generated for you (e.g. with `WithPersistentCookieName`). You gotta know the real name for middleware and the rest of your app. Use `GetCookieName()` on the session manager:
@@ -472,6 +501,7 @@ Crooner's got type-specific helpers so you pull session values the right way—n
 - `GetString(sm SessionManager, c echo.Context, key string) (string, error)`
 - `GetInt(sm SessionManager, c echo.Context, key string) (int, error)`
 - `GetBool(sm SessionManager, c echo.Context, key string) (bool, error)`
+- `GetOrCreateCSRFToken(sm SessionManager, c echo.Context) (string, error)` — returns the session CSRF token for use in forms or headers; creates and stores one if absent (e.g. after login).
 
 #### Usage Example
 

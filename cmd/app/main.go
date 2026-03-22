@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	crooner "github.com/catgoose/crooner"
+	crooner "github.com/catgoose/crooner/v2"
 	"github.com/labstack/echo/v4"
 )
 
