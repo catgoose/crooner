@@ -83,7 +83,7 @@ sessionMgr, scsMgr, _ := crooner.NewSCSManager(
     crooner.WithPersistentCookieName(secret, appName),
     crooner.WithLifetime(12*time.Hour),
 )
-authHandler, _ := crooner.NewAuthConfig(ctx, mux, &crooner.AuthConfigParams{
+authHandler, _ := crooner.NewAuthConfig(ctx, &crooner.AuthConfigParams{
     IssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
     ClientID:     os.Getenv("OIDC_CLIENT_ID"),
     ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
