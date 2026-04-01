@@ -61,11 +61,13 @@ func main() {
 	}
 	if os.Getenv("GEN_ERROR_EXAMPLES") == "1" {
 		params.ErrorConfig = &crooner.ErrorConfig{ShowDetails: true}
+		params.AuthRoutes.AuthExempt = append(params.AuthRoutes.AuthExempt, "/__error_examples__/")
 	}
 	authHandler, err := crooner.NewAuthConfig(context.Background(), mux, params)
 	if err != nil {
 		log.Fatalf("auth config: %v", err)
 	}
+	authHandler.SetupErrorExampleRoutes(mux)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		user, _ := crooner.GetString(sessionMgr, r, crooner.SessionKeyUser)
