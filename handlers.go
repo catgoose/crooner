@@ -14,7 +14,7 @@ import (
 type AuthHandlerConfig struct {
 	SessionMgr SessionManager
 	*AuthConfig
-	SessionValueClaims []map[string]string
+	SessionValueClaims map[string]string
 }
 
 // userClaimValue returns the first non-empty string from claims for the given claim names (primary then fallbacks).
@@ -66,14 +66,11 @@ func (a *AuthHandlerConfig) SetupAuth(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+routes.Logout, a.LogoutHandler())
 }
 
-// Middleware returns the standard middleware chain for auth: security headers,
-// require-auth, and CSRF token response header. Apply this by wrapping your mux.
+// Middleware returns the standard middleware chain for auth: security headers
+// and require-auth. Apply this by wrapping your mux.
 func (a *AuthHandlerConfig) Middleware() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		h := next
-		if a.CSRF != nil {
-			h = CSRFTokenResponseHeader(a.SessionMgr, a.CSRF.HeaderName)(h)
-		}
 		h = RequireAuth(a.SessionMgr, a.AuthRoutes)(h)
 		h = SecurityHeadersMiddleware(a.SecurityHeaders)(h)
 		return h
@@ -251,10 +248,6 @@ func (a *AuthHandlerConfig) CallbackHandler() http.HandlerFunc {
 			a.handleError(w, r, http.StatusInternalServerError, "Failed to save session", err)
 			return
 		}
-		if _, err := GetOrCreateCSRFToken(a.SessionMgr, r); err != nil {
-			a.handleError(w, r, http.StatusInternalServerError, "Failed to create CSRF token", err)
-			return
-		}
 		baseURL := requestScheme(r) + "://" + r.Host
 		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
 		if err != nil {
@@ -268,21 +261,6 @@ func (a *AuthHandlerConfig) CallbackHandler() http.HandlerFunc {
 // LogoutHandler creates a handler function for the logout route
 func (a *AuthHandlerConfig) LogoutHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if a.CSRF != nil && a.CSRF.EnableLogoutCSRF {
-			expected, err := GetString(a.SessionMgr, r, SessionKeyCSRFToken)
-			if err != nil {
-				a.handleError(w, r, http.StatusForbidden, "CSRF token not found", err)
-				return
-			}
-			received := r.Header.Get(a.CSRF.HeaderName)
-			if received == "" {
-				received = r.FormValue(a.CSRF.FormFieldName)
-			}
-			if len(received) != len(expected) || subtle.ConstantTimeCompare([]byte(received), []byte(expected)) != 1 {
-				a.handleError(w, r, http.StatusForbidden, "Invalid CSRF token", nil)
-				return
-			}
-		}
 		if err := a.SessionMgr.ClearInvalidate(r); err != nil {
 			a.handleError(w, r, http.StatusInternalServerError, "Failed to clear/invalidate session", err)
 			return

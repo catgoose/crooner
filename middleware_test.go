@@ -182,22 +182,3 @@ func TestRequireAuth_AuthExempt_NextCalled(t *testing.T) {
 	}
 }
 
-func TestCSRFTokenResponseHeader_UserInSession_SetsHeader(t *testing.T) {
-	sm := newMapSessionManager()
-	r := testRequest()
-	_ = sm.Set(r, SessionKeyUser, "alice")
-
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
-	handler := CSRFTokenResponseHeader(sm, "X-CSRF-Token")(inner)
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, req)
-
-	if rec.Code != 200 {
-		t.Errorf("status = %d, want 200", rec.Code)
-	}
-	if rec.Header().Get("X-CSRF-Token") == "" {
-		t.Error("X-CSRF-Token header not set when user in session")
-	}
-}

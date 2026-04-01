@@ -409,34 +409,9 @@ cfg.Lifetime = 24 * time.Hour
 - Regenerate the session on login or privilege change
 - The logout route is **POST** only. Use a form with `method="post"` and `action="/logout"` for your logout button.
 
-### CSRF (Cross-Site Request Forgery)
+### CSRF Protection
 
-The OAuth login flow is protected by the `state` parameter (stored in session and validated on callback). For **logout** and your own state-changing routes, Crooner supports per-session CSRF tokens.
-
-- **Logout:** When `CSRFConfig.EnableLogoutCSRF` is true (default), `POST /logout` requires a valid CSRF token in the request. Send it in the header `X-CSRF-Token` or in a form field `csrf_token`.
-- **Getting the token:** After login, a token is created and stored in the session. Use `crooner.GetOrCreateCSRFToken(sessionMgr, r)` in your handlers or templates to render it in forms (e.g. `<input type="hidden" name="csrf_token" value="{{.CSRFToken}}">`). When you call `NewAuthConfig`, Crooner also sets the token on the **response header** `X-CSRF-Token` for every authenticated request so JavaScript can read it.
-- **Your own POST routes:** Add the optional `crooner.CSRF(sessionMgr, opts...)` middleware to protect POST/PUT/PATCH/DELETE. Use `CSRFExemptPaths(paths)` to skip validation for specific path prefixes (e.g. webhooks).
-
-Example logout form with token (template):
-
-```go
-// In your handler: pass token to template
-token, _ := crooner.GetOrCreateCSRFToken(sessionMgr, r)
-// template: <form method="post" action="/logout">
-//   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-//   <button type="submit">Log out</button>
-// </form>
-```
-
-Example with JavaScript (read token from response header, send on fetch):
-
-```javascript
-// After any GET that returns 200, the response may include X-CSRF-Token
-const token = response.headers.get('X-CSRF-Token');
-fetch('/logout', { method: 'POST', headers: { 'X-CSRF-Token': token } });
-```
-
-To disable logout CSRF (e.g. during migration), set `params.CSRF = &crooner.CSRFConfig{EnableLogoutCSRF: false}`.
+Crooner does not include CSRF middleware. The OAuth login flow is protected by the `state` parameter (stored in session and validated on callback). For CSRF protection on your own routes (POST, PUT, PATCH, DELETE), use [gorilla/csrf](https://github.com/gorilla/csrf) or a similar library.
 
 ## Retrieving the Session Cookie Name
 
@@ -462,7 +437,6 @@ Crooner provides type-specific helpers for session values. They work with any `S
 - `GetString(sm SessionManager, r *http.Request, key string) (string, error)`
 - `GetInt(sm SessionManager, r *http.Request, key string) (int, error)`
 - `GetBool(sm SessionManager, r *http.Request, key string) (bool, error)`
-- `GetOrCreateCSRFToken(sm SessionManager, r *http.Request) (string, error)` -- returns the session CSRF token; creates and stores one if absent.
 
 #### Usage Example
 
@@ -508,15 +482,10 @@ The built-in auth routes respond with **RFC 7807 / RFC 9457 problem details**: J
 | `help`                    | Default. Lists the real targets.                                                                                                                                                                               |
 | `build`                   | Builds `bin/oauth-server`, `bin/app`, `bin/simulate`.                                                                                                                                                          |
 | `test`                    | Runs `go test ./...`.                                                                                                                                                                                          |
-| `generate-error-examples` | Runs `scripts/gen-error-examples.sh`: starts app and oauth-server, curls `__error_examples__/*`, writes `docs/error-examples/*.json` and rewrites the "Generated example responses" block in `docs/errors.md`. |
 | `verify-docs`             | `git diff --exit-code docs/` -- fails if docs are dirty so CI keeps things real.                                                                                                                               |
-| `ci`                      | `build`, `test`, `generate-error-examples`, `verify-docs`.                                                                                                                                                     |
+| `ci`                      | `build`, `test`, `verify-docs`.                                                                                                                                                                                |
 | `install-playwright`      | Install Playwright browsers for `simulate`.                                                                                                                                                                    |
 | `pkce-sim`                | Depends on `build`; runs the PKCE simulation script.                                                                                                                                                           |
-
-### About the example errors in docs
-
-**docs/errors.md** lists every problem-detail type and when each is returned. **docs/error-examples/\*.json** are generated JSON samples. Run `make generate-error-examples` to regenerate. CI runs `generate-error-examples` and `verify-docs`, so if you change code that affects error responses and forget to regenerate, the build fails.
 
 ## Testing
 

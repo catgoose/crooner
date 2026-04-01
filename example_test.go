@@ -164,39 +164,6 @@ func ExampleRequireAuth() {
 	// routes registered
 }
 
-// ExampleCSRF demonstrates protecting state-changing routes with the CSRF
-// middleware. The middleware validates tokens on POST/PUT/PATCH/DELETE and
-// sets the token on the response header for GET requests when a session
-// user exists.
-func ExampleCSRF() {
-	sessionMgr, scsMgr, err := crooner.NewSCSManager(
-		crooner.WithPersistentCookieName("secret", "myapp"),
-		crooner.WithLifetime(12*time.Hour),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("saved"))
-	})
-
-	// Apply CSRF protection with custom options.
-	handler := crooner.CSRF(
-		sessionMgr,
-		crooner.CSRFHeaderName("X-CSRF-Token"),
-		crooner.CSRFFormFieldName("csrf_token"),
-		crooner.CSRFExemptPaths([]string{"/webhooks/", "/api/public/"}),
-	)(mux)
-	handler = scsMgr.LoadAndSave(handler)
-	_ = handler
-
-	fmt.Println("csrf middleware applied")
-	// Output:
-	// csrf middleware applied
-}
-
 // ExampleDefaultSecureSessionConfig demonstrates retrieving the default
 // secure session configuration and customizing individual fields.
 func ExampleDefaultSecureSessionConfig() {
@@ -241,7 +208,7 @@ func ExampleGenerateCodeVerifier() {
 }
 
 // ExampleEncodeStatePayload demonstrates encoding and decoding the OAuth
-// state parameter that carries both a CSRF token and the original path
+// state parameter that carries both a state token and the original path
 // through the login flow.
 func ExampleEncodeStatePayload() {
 	state := crooner.EncodeStatePayload("random-csrf-token", "/dashboard?id=42")
@@ -379,28 +346,6 @@ func ExampleSessionErrorResponse() {
 	// error: session_error
 	// key: user
 	// reason: not found
-}
-
-// ExampleCSRFConfig demonstrates configuring CSRF protection for the
-// authentication flow, including disabling CSRF on logout.
-func ExampleCSRFConfig() {
-	// Enable CSRF on logout (default behavior).
-	enabled := &crooner.CSRFConfig{
-		EnableLogoutCSRF: true,
-		HeaderName:       "X-CSRF-Token",
-		FormFieldName:    "csrf_token",
-	}
-
-	// Disable CSRF on logout during migration.
-	disabled := &crooner.CSRFConfig{
-		EnableLogoutCSRF: false,
-	}
-
-	fmt.Println("logout csrf enabled:", enabled.EnableLogoutCSRF)
-	fmt.Println("logout csrf disabled:", disabled.EnableLogoutCSRF)
-	// Output:
-	// logout csrf enabled: true
-	// logout csrf disabled: false
 }
 
 // ExampleAuthRoutes demonstrates defining the authentication routes and
