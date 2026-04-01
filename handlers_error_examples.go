@@ -4,15 +4,14 @@ import (
 	"errors"
 	"net/http"
 	"os"
-
-	"github.com/labstack/echo/v4"
+	"strings"
 )
 
 const errorExamplesPrefix = "/__error_examples__"
 
-func setupErrorExampleRoutes(e *echo.Echo, a *AuthHandlerConfig) {
-	e.GET(errorExamplesPrefix+"/:slug", func(c echo.Context) error {
-		slug := c.Param("slug")
+func setupErrorExampleRoutes(mux *http.ServeMux, a *AuthHandlerConfig) {
+	mux.HandleFunc("GET "+errorExamplesPrefix+"/", func(w http.ResponseWriter, r *http.Request) {
+		slug := strings.TrimPrefix(r.URL.Path, errorExamplesPrefix+"/")
 		var status int
 		var msg string
 		var errVal error
@@ -32,9 +31,10 @@ func setupErrorExampleRoutes(e *echo.Echo, a *AuthHandlerConfig) {
 		case "about_blank":
 			status, msg, errVal = 400, "unknown", errors.New("unknown")
 		default:
-			return c.NoContent(http.StatusNotFound)
+			w.WriteHeader(http.StatusNotFound)
+			return
 		}
-		return a.handleError(c, status, msg, errVal)
+		a.handleError(w, r, status, msg, errVal)
 	})
 }
 

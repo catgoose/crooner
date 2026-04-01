@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
 )
 
@@ -200,11 +199,14 @@ func loginRedirectURL(routes *AuthRoutes, uri string) string {
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters.
+// It registers auth routes on the provided ServeMux and returns an AuthHandlerConfig
+// whose Middleware() method should be used to wrap the mux.
+//
 // Returns a ConfigError if any required parameter is missing or invalid.
 //
 // Example error handling:
 //
-//	err := crooner.NewAuthConfig(ctx, e, params)
+//	authHandler, err := crooner.NewAuthConfig(ctx, mux, params)
 //	if err != nil {
 //	    var cfgErr *crooner.ConfigError
 //	    if errors.As(err, &cfgErr) {
@@ -247,21 +249,21 @@ func fetchOIDCDiscovery(ctx context.Context, issuerURL string) (*oidcDiscovery, 
 	return &d, nil
 }
 
-func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) error {
+func NewAuthConfig(ctx context.Context, mux *http.ServeMux, params *AuthConfigParams) (*AuthHandlerConfig, error) {
 	if err := validateAuthParams(params); err != nil {
-		return err
+		return nil, err
 	}
 
 	issuerURL := strings.TrimSuffix(params.IssuerURL, "/")
 	provider, err := oidc.NewProvider(ctx, issuerURL)
 	if err != nil {
-		return &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
+		return nil, &ConfigError{Field: "IssuerURL", Reason: "failed to initialize OIDC provider", Err: err}
 	}
 	discoveryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	discovery, err := fetchOIDCDiscovery(discoveryCtx, issuerURL)
 	if err != nil {
-		return &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
+		return nil, &ConfigError{Field: "IssuerURL", Reason: "failed to fetch discovery", Err: err}
 	}
 	oauth2Endpoint := oauth2.Endpoint{
 		AuthURL:  discovery.AuthorizationEndpoint,
@@ -336,11 +338,11 @@ func NewAuthConfig(ctx context.Context, e *echo.Echo, params *AuthConfigParams) 
 	if errorExampleRoutesEnabled() && params.AuthRoutes != nil {
 		params.AuthRoutes.AuthExempt = append(params.AuthRoutes.AuthExempt, errorExamplesPrefix)
 	}
-	authHandlerConfig.SetupAuth(e)
+	authHandlerConfig.SetupAuth(mux)
 	if errorExampleRoutesEnabled() {
-		setupErrorExampleRoutes(e, authHandlerConfig)
+		setupErrorExampleRoutes(mux, authHandlerConfig)
 	}
-	return nil
+	return authHandlerConfig, nil
 }
 
 // validateAuthParams ensures all necessary parameters are provided and valid.

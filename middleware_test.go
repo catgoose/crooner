@@ -5,18 +5,17 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	"github.com/labstack/echo/v4"
 )
 
 func TestSecurityHeadersMiddleware_NilConfig_Defaults(t *testing.T) {
-	e := echo.New()
-	e.Use(SecurityHeadersMiddleware(nil))
-	e.GET("/", func(c echo.Context) error { return c.String(200, "ok") })
+	handler := SecurityHeadersMiddleware(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	h := rec.Header()
 	if h.Get("Content-Security-Policy") != "default-src 'self'" {
@@ -44,13 +43,14 @@ func TestSecurityHeadersMiddleware_CustomConfig(t *testing.T) {
 		ContentSecurityPolicy: "default-src 'none'",
 		XFrameOptions:         "SAMEORIGIN",
 	}
-	e := echo.New()
-	e.Use(SecurityHeadersMiddleware(cfg))
-	e.GET("/", func(c echo.Context) error { return c.String(200, "ok") })
+	handler := SecurityHeadersMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	h := rec.Header()
 	if h.Get("Content-Security-Policy") != "default-src 'none'" {
@@ -66,14 +66,15 @@ func TestSecurityHeadersMiddleware_CustomConfig(t *testing.T) {
 
 func TestSecurityHeadersMiddleware_HSTS_HTTPS(t *testing.T) {
 	cfg := &SecurityHeadersConfig{StrictTransportSecurity: "max-age=3600"}
-	e := echo.New()
-	e.Use(SecurityHeadersMiddleware(cfg))
-	e.GET("/", func(c echo.Context) error { return c.String(200, "ok") })
+	handler := SecurityHeadersMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	if rec.Header().Get("Strict-Transport-Security") != "max-age=3600" {
 		t.Errorf("Strict-Transport-Security = %q", rec.Header().Get("Strict-Transport-Security"))
@@ -82,14 +83,15 @@ func TestSecurityHeadersMiddleware_HSTS_HTTPS(t *testing.T) {
 
 func TestSecurityHeadersMiddleware_HSTS_HTTP(t *testing.T) {
 	cfg := &SecurityHeadersConfig{StrictTransportSecurity: "max-age=3600"}
-	e := echo.New()
-	e.Use(SecurityHeadersMiddleware(cfg))
-	e.GET("/", func(c echo.Context) error { return c.String(200, "ok") })
+	handler := SecurityHeadersMiddleware(cfg)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("ok"))
+	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.URL.Scheme = "http"
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	if rec.Header().Get("Strict-Transport-Security") != "" {
 		t.Errorf("Strict-Transport-Security should be unset for HTTP, got %q", rec.Header().Get("Strict-Transport-Security"))
@@ -99,17 +101,19 @@ func TestSecurityHeadersMiddleware_HSTS_HTTP(t *testing.T) {
 func TestRequireAuth_ExemptPath_NextCalled(t *testing.T) {
 	sm := newMapSessionManager()
 	routes := &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"}
-	e := echo.New()
-	e.Use(RequireAuth(sm, routes))
-	e.GET("/login", func(c echo.Context) error { return c.String(200, "login") })
-	e.GET("/callback", func(c echo.Context) error { return c.String(200, "callback") })
-	e.GET("/logout", func(c echo.Context) error { return c.String(200, "logout") })
-	e.GET("/protected", func(c echo.Context) error { return c.String(200, "protected") })
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /login", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("login")) })
+	mux.HandleFunc("GET /callback", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("callback")) })
+	mux.HandleFunc("GET /logout", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("logout")) })
+	mux.HandleFunc("GET /protected", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("protected")) })
+
+	handler := RequireAuth(sm, routes)(mux)
 
 	for _, path := range []string{"/login", "/callback", "/logout"} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
-		e.ServeHTTP(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code != 200 {
 			t.Errorf("%s: status = %d, want 200", path, rec.Code)
 		}
@@ -119,13 +123,13 @@ func TestRequireAuth_ExemptPath_NextCalled(t *testing.T) {
 func TestRequireAuth_NoSessionUser_RedirectToLogin(t *testing.T) {
 	sm := newMapSessionManager()
 	routes := &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"}
-	e := echo.New()
-	e.Use(RequireAuth(sm, routes))
-	e.GET("/protected", func(c echo.Context) error { return c.String(200, "ok") })
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	handler := RequireAuth(sm, routes)(inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	if rec.Code != 302 {
 		t.Errorf("status = %d, want 302", rec.Code)
@@ -146,17 +150,16 @@ func TestRequireAuth_NoSessionUser_RedirectToLogin(t *testing.T) {
 
 func TestRequireAuth_SessionUser_NextCalled(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, SessionKeyUser, "alice")
+	r := testRequest()
+	_ = sm.Set(r, SessionKeyUser, "alice")
 
 	routes := &AuthRoutes{Login: "/login", Callback: "/callback", Logout: "/logout"}
-	e := echo.New()
-	e.Use(RequireAuth(sm, routes))
-	e.GET("/protected", func(c echo.Context) error { return c.String(200, "ok") })
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	handler := RequireAuth(sm, routes)(inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/protected", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Errorf("status = %d, want 200", rec.Code)
 	}
@@ -168,13 +171,12 @@ func TestRequireAuth_AuthExempt_NextCalled(t *testing.T) {
 		Login: "/login", Callback: "/callback", Logout: "/logout",
 		AuthExempt: []string{"/health"},
 	}
-	e := echo.New()
-	e.Use(RequireAuth(sm, routes))
-	e.GET("/health", func(c echo.Context) error { return c.String(200, "ok") })
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	handler := RequireAuth(sm, routes)(inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Errorf("status = %d, want 200", rec.Code)
 	}
@@ -182,16 +184,15 @@ func TestRequireAuth_AuthExempt_NextCalled(t *testing.T) {
 
 func TestCSRFTokenResponseHeader_UserInSession_SetsHeader(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, SessionKeyUser, "alice")
+	r := testRequest()
+	_ = sm.Set(r, SessionKeyUser, "alice")
 
-	e := echo.New()
-	e.Use(CSRFTokenResponseHeader(sm, "X-CSRF-Token"))
-	e.GET("/", func(c echo.Context) error { return c.String(200, "ok") })
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	handler := CSRFTokenResponseHeader(sm, "X-CSRF-Token")(inner)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
+	handler.ServeHTTP(rec, req)
 
 	if rec.Code != 200 {
 		t.Errorf("status = %d, want 200", rec.Code)

@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/labstack/echo/v4"
 	"golang.org/x/oauth2"
 )
 
@@ -263,8 +262,8 @@ func validAuthConfigParams() *AuthConfigParams {
 func TestNewAuthConfig_MissingIssuerURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.IssuerURL = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing IssuerURL) = nil")
 	}
@@ -277,8 +276,8 @@ func TestNewAuthConfig_MissingIssuerURL(t *testing.T) {
 func TestNewAuthConfig_MissingClientID(t *testing.T) {
 	params := validAuthConfigParams()
 	params.ClientID = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing ClientID) = nil")
 	}
@@ -291,8 +290,8 @@ func TestNewAuthConfig_MissingClientID(t *testing.T) {
 func TestNewAuthConfig_MissingRedirectURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.RedirectURL = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing RedirectURL) = nil")
 	}
@@ -305,8 +304,8 @@ func TestNewAuthConfig_MissingRedirectURL(t *testing.T) {
 func TestNewAuthConfig_InvalidRedirectURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.RedirectURL = "not-a-url"
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(invalid RedirectURL) = nil")
 	}
@@ -319,8 +318,8 @@ func TestNewAuthConfig_InvalidRedirectURL(t *testing.T) {
 func TestNewAuthConfig_MissingLogoutURLRedirect(t *testing.T) {
 	params := validAuthConfigParams()
 	params.LogoutURLRedirect = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing LogoutURLRedirect) = nil")
 	}
@@ -333,8 +332,8 @@ func TestNewAuthConfig_MissingLogoutURLRedirect(t *testing.T) {
 func TestNewAuthConfig_MissingLoginURLRedirect(t *testing.T) {
 	params := validAuthConfigParams()
 	params.LoginURLRedirect = ""
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing LoginURLRedirect) = nil")
 	}
@@ -347,8 +346,8 @@ func TestNewAuthConfig_MissingLoginURLRedirect(t *testing.T) {
 func TestNewAuthConfig_MissingAuthRoutes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AuthRoutes = nil
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(nil AuthRoutes) = nil")
 	}
@@ -361,8 +360,8 @@ func TestNewAuthConfig_MissingAuthRoutes(t *testing.T) {
 func TestNewAuthConfig_EmptyAuthRoutes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AuthRoutes = &AuthRoutes{Login: "", Callback: "/callback", Logout: "/logout"}
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(empty Login) = nil")
 	}
@@ -375,8 +374,8 @@ func TestNewAuthConfig_EmptyAuthRoutes(t *testing.T) {
 func TestNewAuthConfig_InvalidAdditionalScopes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AdditionalScopes = []string{"openid", " ", "email"}
-	e := echo.New()
-	err := NewAuthConfig(context.Background(), e, params)
+	mux := http.NewServeMux()
+	_, err := NewAuthConfig(context.Background(), mux, params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(empty scope) = nil")
 	}

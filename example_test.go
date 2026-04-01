@@ -8,7 +8,6 @@ import (
 	"time"
 
 	crooner "github.com/catgoose/crooner"
-	"github.com/labstack/echo/v4"
 )
 
 // ExampleNewSCSManager demonstrates creating a session manager with
@@ -27,8 +26,7 @@ func ExampleNewSCSManager() {
 		panic(err)
 	}
 
-	e := echo.New()
-	e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
+	_ = scsMgr // use scsMgr.LoadAndSave as middleware
 
 	fmt.Println("cookie:", sessionMgr.GetCookieName())
 	// Output:
@@ -56,13 +54,14 @@ func ExampleNewSCSManagerWithConfig() {
 }
 
 // ExampleNewAuthConfig demonstrates configuring the full OIDC authentication
-// flow on an Echo instance.  NewAuthConfig registers login, callback, and
-// logout routes together with security-header and auth-required middleware.
+// flow using standard net/http. NewAuthConfig registers login, callback, and
+// logout routes on the provided ServeMux and returns an AuthHandlerConfig
+// whose Middleware() method provides security-header and auth-required middleware.
 //
 // In a real application the issuer URL, client ID, secrets, and redirect
 // URLs come from environment variables or a config file.
 func ExampleNewAuthConfig() {
-	e := echo.New()
+	mux := http.NewServeMux()
 
 	sessionMgr, scsMgr, err := crooner.NewSCSManager(
 		crooner.WithPersistentCookieName("secret", "myapp"),
@@ -71,7 +70,6 @@ func ExampleNewAuthConfig() {
 	if err != nil {
 		panic(err)
 	}
-	e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
 
 	params := &crooner.AuthConfigParams{
 		IssuerURL:         "https://accounts.example.com",
@@ -89,11 +87,20 @@ func ExampleNewAuthConfig() {
 	}
 
 	ctx := context.Background()
-	if err := crooner.NewAuthConfig(ctx, e, params); err != nil {
+	authHandler, err := crooner.NewAuthConfig(ctx, mux, params)
+	if err != nil {
 		// NewAuthConfig contacts the OIDC issuer at startup; handle
 		// discovery errors gracefully.
 		fmt.Println("auth config error:", err)
 	}
+
+	// Wrap the mux with middleware (session loading + auth)
+	var handler http.Handler = mux
+	if authHandler != nil {
+		handler = authHandler.Middleware()(handler)
+	}
+	handler = scsMgr.LoadAndSave(handler)
+	_ = handler // use with http.ListenAndServe
 }
 
 // ExampleSecurityHeadersConfig demonstrates customizing the security
@@ -114,7 +121,7 @@ func ExampleSecurityHeadersConfig() {
 }
 
 // ExampleRequireAuth demonstrates adding the RequireAuth middleware to
-// protect routes that need an authenticated session.  Unauthenticated
+// protect routes that need an authenticated session. Unauthenticated
 // requests are redirected to the login route.
 func ExampleRequireAuth() {
 	sessionMgr, scsMgr, err := crooner.NewSCSManager(
@@ -135,19 +142,22 @@ func ExampleRequireAuth() {
 		},
 	}
 
-	e := echo.New()
-	e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
-	e.Use(crooner.RequireAuth(sessionMgr, routes))
+	mux := http.NewServeMux()
 
 	// Protected route -- requires a session with a "user" key.
-	e.GET("/dashboard", func(c echo.Context) error {
-		return c.String(http.StatusOK, "welcome")
+	mux.HandleFunc("GET /dashboard", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("welcome"))
 	})
 
 	// Exempt route -- accessible without authentication.
-	e.GET("/health", func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
+	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
 	})
+
+	// Wrap with middleware
+	handler := crooner.RequireAuth(sessionMgr, routes)(mux)
+	handler = scsMgr.LoadAndSave(handler)
+	_ = handler
 
 	fmt.Println("routes registered")
 	// Output:
@@ -155,7 +165,7 @@ func ExampleRequireAuth() {
 }
 
 // ExampleCSRF demonstrates protecting state-changing routes with the CSRF
-// middleware.  The middleware validates tokens on POST/PUT/PATCH/DELETE and
+// middleware. The middleware validates tokens on POST/PUT/PATCH/DELETE and
 // sets the token on the response header for GET requests when a session
 // user exists.
 func ExampleCSRF() {
@@ -167,20 +177,20 @@ func ExampleCSRF() {
 		panic(err)
 	}
 
-	e := echo.New()
-	e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /settings", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("saved"))
+	})
 
 	// Apply CSRF protection with custom options.
-	e.Use(crooner.CSRF(
+	handler := crooner.CSRF(
 		sessionMgr,
 		crooner.CSRFHeaderName("X-CSRF-Token"),
 		crooner.CSRFFormFieldName("csrf_token"),
 		crooner.CSRFExemptPaths([]string{"/webhooks/", "/api/public/"}),
-	))
-
-	e.POST("/settings", func(c echo.Context) error {
-		return c.String(http.StatusOK, "saved")
-	})
+	)(mux)
+	handler = scsMgr.LoadAndSave(handler)
+	_ = handler
 
 	fmt.Println("csrf middleware applied")
 	// Output:
@@ -416,15 +426,16 @@ func ExampleAuthRoutes() {
 // ExampleSecurityHeadersMiddleware demonstrates applying security-header
 // middleware independently (without the full NewAuthConfig flow).
 func ExampleSecurityHeadersMiddleware() {
-	e := echo.New()
-	e.Use(crooner.SecurityHeadersMiddleware(&crooner.SecurityHeadersConfig{
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	})
+
+	handler := crooner.SecurityHeadersMiddleware(&crooner.SecurityHeadersConfig{
 		ContentSecurityPolicy: "default-src 'self'; img-src *",
 		XFrameOptions:         "SAMEORIGIN",
-	}))
-
-	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "ok")
-	})
+	})(mux)
+	_ = handler
 
 	fmt.Println("security headers middleware applied")
 	// Output:
