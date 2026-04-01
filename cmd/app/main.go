@@ -63,10 +63,11 @@ func main() {
 		params.ErrorConfig = &crooner.ErrorConfig{ShowDetails: true}
 		params.AuthRoutes.AuthExempt = append(params.AuthRoutes.AuthExempt, "/__error_examples__/")
 	}
-	authHandler, err := crooner.NewAuthConfig(context.Background(), mux, params)
+	authHandler, err := crooner.NewAuthConfig(context.Background(), params)
 	if err != nil {
 		log.Fatalf("auth config: %v", err)
 	}
+	authHandler.SetupAuth(mux)
 	authHandler.SetupErrorExampleRoutes(mux)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {

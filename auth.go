@@ -188,14 +188,18 @@ func loginRedirectURL(routes *AuthRoutes, uri string) string {
 }
 
 // NewAuthConfig creates a new AuthConfig based on the provided parameters.
-// It registers auth routes on the provided ServeMux and returns an AuthHandlerConfig
-// whose Middleware() method should be used to wrap the mux.
+// It returns an AuthHandlerConfig whose SetupAuth method registers the auth
+// routes on a ServeMux and whose Middleware() method should be used to wrap
+// the mux.
+//
+// The caller is responsible for calling SetupAuth(mux) after NewAuthConfig
+// returns to register the login, callback, and logout routes.
 //
 // Returns a ConfigError if any required parameter is missing or invalid.
 //
 // Example error handling:
 //
-//	authHandler, err := crooner.NewAuthConfig(ctx, mux, params)
+//	authHandler, err := crooner.NewAuthConfig(ctx, params)
 //	if err != nil {
 //	    var cfgErr *crooner.ConfigError
 //	    if errors.As(err, &cfgErr) {
@@ -238,7 +242,7 @@ func fetchOIDCDiscovery(ctx context.Context, issuerURL string) (*oidcDiscovery, 
 	return &d, nil
 }
 
-func NewAuthConfig(ctx context.Context, mux *http.ServeMux, params *AuthConfigParams) (*AuthHandlerConfig, error) {
+func NewAuthConfig(ctx context.Context, params *AuthConfigParams) (*AuthHandlerConfig, error) {
 	if err := validateAuthParams(params); err != nil {
 		return nil, err
 	}
@@ -308,7 +312,6 @@ func NewAuthConfig(ctx context.Context, mux *http.ServeMux, params *AuthConfigPa
 		SessionValueClaims: params.SessionValueClaims,
 		SessionMgr:         params.SessionMgr,
 	}
-	authHandlerConfig.SetupAuth(mux)
 	return authHandlerConfig, nil
 }
 

@@ -54,9 +54,9 @@ func ExampleNewSCSManagerWithConfig() {
 }
 
 // ExampleNewAuthConfig demonstrates configuring the full OIDC authentication
-// flow using standard net/http. NewAuthConfig registers login, callback, and
-// logout routes on the provided ServeMux and returns an AuthHandlerConfig
-// whose Middleware() method provides security-header and auth-required middleware.
+// flow using standard net/http. NewAuthConfig returns an AuthHandlerConfig;
+// call SetupAuth(mux) to register login, callback, and logout routes, then
+// use Middleware() for security-header and auth-required middleware.
 //
 // In a real application the issuer URL, client ID, secrets, and redirect
 // URLs come from environment variables or a config file.
@@ -87,11 +87,16 @@ func ExampleNewAuthConfig() {
 	}
 
 	ctx := context.Background()
-	authHandler, err := crooner.NewAuthConfig(ctx, mux, params)
+	authHandler, err := crooner.NewAuthConfig(ctx, params)
 	if err != nil {
 		// NewAuthConfig contacts the OIDC issuer at startup; handle
 		// discovery errors gracefully.
 		fmt.Println("auth config error:", err)
+	}
+
+	// Register auth routes on the mux
+	if authHandler != nil {
+		authHandler.SetupAuth(mux)
 	}
 
 	// Wrap the mux with middleware (session loading + auth)
