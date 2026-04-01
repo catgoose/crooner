@@ -42,18 +42,3 @@ func SecurityHeadersMiddleware(cfg *SecurityHeadersConfig) func(http.Handler) ht
 	}
 }
 
-// CSRFTokenResponseHeader returns standard middleware that sets the CSRF token on the response
-// when the session has an authenticated user. Use responseHeaderName (e.g. "X-CSRF-Token")
-// so the client can read it and send it on state-changing requests.
-func CSRFTokenResponseHeader(sm SessionManager, responseHeaderName string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if _, err := GetString(sm, r, SessionKeyUser); err == nil {
-				if token, err := GetOrCreateCSRFToken(sm, r); err == nil {
-					w.Header().Set(responseHeaderName, token)
-				}
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
-}

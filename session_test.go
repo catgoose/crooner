@@ -269,38 +269,6 @@ func TestGetBool_InvalidType(t *testing.T) {
 	}
 }
 
-func TestGetOrCreateCSRFToken_CreatesWhenMissing(t *testing.T) {
-	sm := newMapSessionManager()
-	r := testRequest()
-	token, err := GetOrCreateCSRFToken(sm, r)
-	if err != nil {
-		t.Fatalf("GetOrCreateCSRFToken: %v", err)
-	}
-	if token == "" {
-		t.Error("GetOrCreateCSRFToken returned empty token")
-	}
-	stored, err := GetString(sm, r, SessionKeyCSRFToken)
-	if err != nil {
-		t.Fatalf("GetString(csrf_token): %v", err)
-	}
-	if stored != token {
-		t.Errorf("stored token = %q, want %q", stored, token)
-	}
-}
-
-func TestGetOrCreateCSRFToken_ReturnsExisting(t *testing.T) {
-	sm := newMapSessionManager()
-	r := testRequest()
-	_ = sm.Set(r, SessionKeyCSRFToken, "existing-token")
-	token, err := GetOrCreateCSRFToken(sm, r)
-	if err != nil {
-		t.Fatalf("GetOrCreateCSRFToken: %v", err)
-	}
-	if token != "existing-token" {
-		t.Errorf("GetOrCreateCSRFToken = %q, want existing-token", token)
-	}
-}
-
 func TestSaveSessionValueClaims_NilValueClaims(t *testing.T) {
 	sm := newMapSessionManager()
 	r := testRequest()
@@ -318,7 +286,7 @@ func TestSaveSessionValueClaims_StringClaim(t *testing.T) {
 	sm := newMapSessionManager()
 	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
-	valueClaims := []map[string]string{{"email": "email"}}
+	valueClaims := map[string]string{"email": "email"}
 	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
@@ -336,7 +304,7 @@ func TestSaveSessionValueClaims_SliceClaimNormalized(t *testing.T) {
 	sm := newMapSessionManager()
 	r := testRequest()
 	claims := map[string]any{"roles": []any{"admin", "user"}}
-	valueClaims := []map[string]string{{"roles": "roles"}}
+	valueClaims := map[string]string{"roles": "roles"}
 	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
@@ -355,7 +323,7 @@ func TestSaveSessionValueClaims_MissingClaim(t *testing.T) {
 	sm := newMapSessionManager()
 	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
-	valueClaims := []map[string]string{{"roles": "roles"}}
+	valueClaims := map[string]string{"roles": "roles"}
 	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
@@ -370,7 +338,7 @@ func TestSaveSessionValueClaims_SetFails(t *testing.T) {
 	fail := &failingSessionManager{data: make(map[string]any)}
 	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
-	valueClaims := []map[string]string{{"email": "email"}}
+	valueClaims := map[string]string{"email": "email"}
 	err := SaveSessionValueClaims(fail, r, claims, valueClaims)
 	if err != errSetFailed {
 		t.Errorf("SaveSessionValueClaims = %v, want errSetFailed", err)

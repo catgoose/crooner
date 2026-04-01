@@ -551,57 +551,6 @@ func TestLogoutHandler_Success_RedirectsToLogoutURL(t *testing.T) {
 	}
 }
 
-func TestLogoutHandler_CSRFEnabled_ValidToken_Redirects(t *testing.T) {
-	sm := newMapSessionManager()
-	a := minimalAuthHandlerConfig(sm)
-	a.CSRF = &CSRFConfig{EnableLogoutCSRF: true, HeaderName: "X-CSRF-Token", FormFieldName: "csrf_token"}
-	token := "valid-csrf-token"
-	_ = sm.Set(nil, SessionKeyCSRFToken, token)
-	_ = sm.Set(nil, SessionKeyUser, "user")
-
-	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
-	req.Header.Set("X-CSRF-Token", token)
-	rec := httptest.NewRecorder()
-	a.LogoutHandler().ServeHTTP(rec, req)
-
-	if rec.Code != 302 {
-		t.Errorf("status = %d, want 302", rec.Code)
-	}
-}
-
-func TestLogoutHandler_CSRFEnabled_InvalidToken_403(t *testing.T) {
-	sm := newMapSessionManager()
-	a := minimalAuthHandlerConfig(sm)
-	a.CSRF = &CSRFConfig{EnableLogoutCSRF: true, HeaderName: "X-CSRF-Token", FormFieldName: "csrf_token"}
-	_ = sm.Set(nil, SessionKeyCSRFToken, "expected-token")
-	_ = sm.Set(nil, SessionKeyUser, "user")
-
-	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
-	req.Header.Set("X-CSRF-Token", "wrong-token")
-	rec := httptest.NewRecorder()
-	a.LogoutHandler().ServeHTTP(rec, req)
-
-	if rec.Code != 403 {
-		t.Errorf("status = %d, want 403", rec.Code)
-	}
-}
-
-func TestLogoutHandler_CSRFEnabled_MissingToken_403(t *testing.T) {
-	sm := newMapSessionManager()
-	a := minimalAuthHandlerConfig(sm)
-	a.CSRF = &CSRFConfig{EnableLogoutCSRF: true, HeaderName: "X-CSRF-Token", FormFieldName: "csrf_token"}
-	_ = sm.Set(nil, SessionKeyCSRFToken, "expected-token")
-	_ = sm.Set(nil, SessionKeyUser, "user")
-
-	req := httptest.NewRequest(http.MethodPost, "/logout", nil)
-	rec := httptest.NewRecorder()
-	a.LogoutHandler().ServeHTTP(rec, req)
-
-	if rec.Code != 403 {
-		t.Errorf("status = %d, want 403", rec.Code)
-	}
-}
-
 func TestSetupAuth_RegistersRoutes(t *testing.T) {
 	sm := newMapSessionManager()
 	a := minimalAuthHandlerConfig(sm)

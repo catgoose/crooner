@@ -145,7 +145,6 @@ const (
 	SessionKeyOAuthState   = "oauth_state"
 	SessionKeyCodeVerifier = "code_verifier"
 	SessionKeyOAuthNonce   = "oauth_nonce"
-	SessionKeyCSRFToken    = "csrf_token"
 )
 
 func getSessionTyped[T any](sm SessionManager, r *http.Request, key string, zero T, check func(any) (T, bool)) (T, error) {
@@ -166,23 +165,6 @@ func GetString(sm SessionManager, r *http.Request, key string) (string, error) {
 	return getSessionTyped(sm, r, key, "", func(a any) (string, bool) { s, ok := a.(string); return s, ok })
 }
 
-// GetOrCreateCSRFToken returns the session CSRF token, generating and storing it if absent.
-// Use after authentication (e.g. in logout handler or when exposing the token to the client).
-func GetOrCreateCSRFToken(sm SessionManager, r *http.Request) (string, error) {
-	token, err := GetString(sm, r, SessionKeyCSRFToken)
-	if err == nil && token != "" {
-		return token, nil
-	}
-	token, err = GenerateState()
-	if err != nil {
-		return "", err
-	}
-	if err := sm.Set(r, SessionKeyCSRFToken, token); err != nil {
-		return "", err
-	}
-	return token, nil
-}
-
 // GetInt retrieves an int value from the session by key.
 // Returns a *SessionError if the key is missing or the value is not an int.
 func GetInt(sm SessionManager, r *http.Request, key string) (int, error) {
@@ -196,27 +178,25 @@ func GetBool(sm SessionManager, r *http.Request, key string) (bool, error) {
 }
 
 // SaveSessionValueClaims stores configured claims from the ID token into the session.
-// valueClaims is a slice of maps: each map has one entry (session key -> claim name).
+// valueClaims maps session keys to claim names (e.g. {"roles": "realm_roles"}).
 // Slice/array claim values are normalized to []string.
-func SaveSessionValueClaims(sm SessionManager, r *http.Request, claims map[string]any, valueClaims []map[string]string) error {
+func SaveSessionValueClaims(sm SessionManager, r *http.Request, claims map[string]any, valueClaims map[string]string) error {
 	if valueClaims == nil {
 		return nil
 	}
-	for _, valueMap := range valueClaims {
-		for key, claim := range valueMap {
-			if val, ok := claims[claim]; ok {
-				if slice, isSlice := val.([]any); isSlice {
-					var sliceStrings []string
-					for _, role := range slice {
-						if strRole, isString := role.(string); isString {
-							sliceStrings = append(sliceStrings, strRole)
-						}
+	for key, claim := range valueClaims {
+		if val, ok := claims[claim]; ok {
+			if slice, isSlice := val.([]any); isSlice {
+				var sliceStrings []string
+				for _, role := range slice {
+					if strRole, isString := role.(string); isString {
+						sliceStrings = append(sliceStrings, strRole)
 					}
-					val = sliceStrings
 				}
-				if err := sm.Set(r, key, val); err != nil {
-					return err
-				}
+				val = sliceStrings
+			}
+			if err := sm.Set(r, key, val); err != nil {
+				return err
 			}
 		}
 	}

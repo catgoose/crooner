@@ -97,16 +97,7 @@ type URLValidationConfig struct {
 
 // ErrorConfig contains error handling configuration
 type ErrorConfig struct {
-	LogLevel    string
 	ShowDetails bool
-}
-
-// CSRFConfig holds CSRF protection settings.
-type CSRFConfig struct {
-	HeaderName       string
-	FormFieldName    string
-	ExemptPaths      []string
-	EnableLogoutCSRF bool
 }
 
 // SecurityHeadersConfig contains configuration for security headers.
@@ -130,14 +121,13 @@ type SecurityHeadersConfig struct {
 
 // AuthConfig is the runtime config built by NewAuthConfig; it holds OAuth2/OIDC and security settings.
 type AuthConfig struct {
-	URLValidation      *URLValidationConfig
-	OAuth2Config       *oauth2.Config
-	Verifier           *oidc.IDTokenVerifier
-	AuthRoutes         *AuthRoutes
-	CSRF               *CSRFConfig
-	SecurityHeaders    *SecurityHeadersConfig
-	SessionSecurity    *SessionSecurityConfig
-	ErrorConfig        *ErrorConfig
+	URLValidation   *URLValidationConfig
+	OAuth2Config    *oauth2.Config
+	Verifier        *oidc.IDTokenVerifier
+	AuthRoutes      *AuthRoutes
+	SecurityHeaders *SecurityHeadersConfig
+	SessionSecurity *SessionSecurityConfig
+	ErrorConfig     *ErrorConfig
 	Provider           *oidc.Provider
 	LogoutURLRedirect  string
 	UserClaim          string
@@ -154,7 +144,6 @@ type AuthConfigParams struct {
 	ErrorConfig        *ErrorConfig
 	URLValidation      *URLValidationConfig
 	SessionSecurity    *SessionSecurityConfig
-	CSRF               *CSRFConfig
 	LoginURLRedirect   string
 	CookieName         string
 	ClientID           string
@@ -164,7 +153,7 @@ type AuthConfigParams struct {
 	UserClaim          string
 	LogoutURLRedirect  string
 	AdditionalScopes   []string
-	SessionValueClaims []map[string]string
+	SessionValueClaims map[string]string
 }
 
 // AuthRoutes contains the routes for authentication
@@ -291,21 +280,6 @@ func NewAuthConfig(ctx context.Context, mux *http.ServeMux, params *AuthConfigPa
 		params.UserClaim = "email"
 	}
 
-	if params.CSRF == nil {
-		params.CSRF = &CSRFConfig{
-			EnableLogoutCSRF: true,
-			HeaderName:       "X-CSRF-Token",
-			FormFieldName:    "csrf_token",
-		}
-	} else {
-		if params.CSRF.HeaderName == "" {
-			params.CSRF.HeaderName = "X-CSRF-Token"
-		}
-		if params.CSRF.FormFieldName == "" {
-			params.CSRF.FormFieldName = "csrf_token"
-		}
-	}
-
 	clientSecret := params.ClientSecret
 
 	authConfig := &AuthConfig{
@@ -328,20 +302,13 @@ func NewAuthConfig(ctx context.Context, mux *http.ServeMux, params *AuthConfigPa
 		ErrorConfig:        params.ErrorConfig,
 		SecurityHeaders:    params.SecurityHeaders,
 		UserClaim:          params.UserClaim,
-		CSRF:               params.CSRF,
 	}
 	authHandlerConfig := &AuthHandlerConfig{
 		AuthConfig:         authConfig,
 		SessionValueClaims: params.SessionValueClaims,
 		SessionMgr:         params.SessionMgr,
 	}
-	if errorExampleRoutesEnabled() && params.AuthRoutes != nil {
-		params.AuthRoutes.AuthExempt = append(params.AuthRoutes.AuthExempt, errorExamplesPrefix)
-	}
 	authHandlerConfig.SetupAuth(mux)
-	if errorExampleRoutesEnabled() {
-		setupErrorExampleRoutes(mux, authHandlerConfig)
-	}
 	return authHandlerConfig, nil
 }
 
