@@ -20,6 +20,7 @@
       - [Available Options](#available-options)
       - [Example Usage](#example-usage)
   - [Advanced Usage](#advanced-usage)
+    - [Bring Your Own Router](#bring-your-own-router)
     - [Custom SessionManager](#custom-sessionmanager)
       - [Example: Redis Implementation](#example-redis-implementation)
   - [Security Best Practices](#security-best-practices)
@@ -143,10 +144,13 @@ func main() {
 	appConfig.CroonerConfig.SessionMgr = sessionMgr
 
 	ctx := context.Background()
-	authHandler, err := crooner.NewAuthConfig(ctx, mux, appConfig.CroonerConfig)
+	authHandler, err := crooner.NewAuthConfig(ctx, appConfig.CroonerConfig)
 	if err != nil {
 		log.Fatalf("failed to initialize Crooner authentication: %v", err)
 	}
+
+	// Register auth routes (login, callback, logout) on the mux
+	authHandler.SetupAuth(mux)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("Hello, Crooner!"))
@@ -277,6 +281,28 @@ sessionMgr, scsMgr, err := crooner.NewSCSManagerWithConfig(cfg)
 if err != nil {
 	log.Fatalf("failed to initialize session manager: %v", err)
 }
+```
+
+### Bring Your Own Router
+
+Since `NewAuthConfig` does not require a `*http.ServeMux`, you can use any router
+that implements `http.Handler`. Call the individual handler methods directly:
+
+```go
+authHandler, err := crooner.NewAuthConfig(ctx, params)
+if err != nil {
+	log.Fatal(err)
+}
+
+// chi, gorilla/mux, or any router
+r := chi.NewRouter()
+r.Get(params.AuthRoutes.Login, authHandler.LoginHandler())
+r.Get(params.AuthRoutes.Callback, authHandler.CallbackHandler())
+r.Post(params.AuthRoutes.Logout, authHandler.LogoutHandler())
+
+// Or for net/http, use the convenience method:
+// mux := http.NewServeMux()
+// authHandler.SetupAuth(mux)
 ```
 
 ### Custom SessionManager

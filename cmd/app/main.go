@@ -62,10 +62,11 @@ func main() {
 	if os.Getenv("GEN_ERROR_EXAMPLES") == "1" {
 		params.ErrorConfig = &crooner.ErrorConfig{ShowDetails: true}
 	}
-	authHandler, err := crooner.NewAuthConfig(context.Background(), mux, params)
+	authHandler, err := crooner.NewAuthConfig(context.Background(), params)
 	if err != nil {
 		log.Fatalf("auth config: %v", err)
 	}
+	authHandler.SetupAuth(mux)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		user, _ := crooner.GetString(sessionMgr, r, crooner.SessionKeyUser)

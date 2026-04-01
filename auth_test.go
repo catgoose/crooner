@@ -262,8 +262,7 @@ func validAuthConfigParams() *AuthConfigParams {
 func TestNewAuthConfig_MissingIssuerURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.IssuerURL = ""
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing IssuerURL) = nil")
 	}
@@ -276,8 +275,7 @@ func TestNewAuthConfig_MissingIssuerURL(t *testing.T) {
 func TestNewAuthConfig_MissingClientID(t *testing.T) {
 	params := validAuthConfigParams()
 	params.ClientID = ""
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing ClientID) = nil")
 	}
@@ -290,8 +288,7 @@ func TestNewAuthConfig_MissingClientID(t *testing.T) {
 func TestNewAuthConfig_MissingRedirectURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.RedirectURL = ""
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing RedirectURL) = nil")
 	}
@@ -304,8 +301,7 @@ func TestNewAuthConfig_MissingRedirectURL(t *testing.T) {
 func TestNewAuthConfig_InvalidRedirectURL(t *testing.T) {
 	params := validAuthConfigParams()
 	params.RedirectURL = "not-a-url"
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(invalid RedirectURL) = nil")
 	}
@@ -318,8 +314,7 @@ func TestNewAuthConfig_InvalidRedirectURL(t *testing.T) {
 func TestNewAuthConfig_MissingLogoutURLRedirect(t *testing.T) {
 	params := validAuthConfigParams()
 	params.LogoutURLRedirect = ""
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing LogoutURLRedirect) = nil")
 	}
@@ -332,8 +327,7 @@ func TestNewAuthConfig_MissingLogoutURLRedirect(t *testing.T) {
 func TestNewAuthConfig_MissingLoginURLRedirect(t *testing.T) {
 	params := validAuthConfigParams()
 	params.LoginURLRedirect = ""
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(missing LoginURLRedirect) = nil")
 	}
@@ -346,8 +340,7 @@ func TestNewAuthConfig_MissingLoginURLRedirect(t *testing.T) {
 func TestNewAuthConfig_MissingAuthRoutes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AuthRoutes = nil
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(nil AuthRoutes) = nil")
 	}
@@ -360,8 +353,7 @@ func TestNewAuthConfig_MissingAuthRoutes(t *testing.T) {
 func TestNewAuthConfig_EmptyAuthRoutes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AuthRoutes = &AuthRoutes{Login: "", Callback: "/callback", Logout: "/logout"}
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(empty Login) = nil")
 	}
@@ -374,8 +366,7 @@ func TestNewAuthConfig_EmptyAuthRoutes(t *testing.T) {
 func TestNewAuthConfig_InvalidAdditionalScopes(t *testing.T) {
 	params := validAuthConfigParams()
 	params.AdditionalScopes = []string{"openid", " ", "email"}
-	mux := http.NewServeMux()
-	_, err := NewAuthConfig(context.Background(), mux, params)
+	_, err := NewAuthConfig(context.Background(), params)
 	if err == nil {
 		t.Fatal("NewAuthConfig(empty scope) = nil")
 	}
