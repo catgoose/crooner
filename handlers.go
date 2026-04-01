@@ -2,12 +2,12 @@ package crooner
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"github.com/labstack/echo/v4"
 )
 
 // AuthHandlerConfig is internal: it ties AuthConfig to a SessionManager and optional claim mapping; created by NewAuthConfig.
@@ -39,33 +39,45 @@ func userClaimValue(claims map[string]any, primary string) string {
 	return ""
 }
 
-// RequireAuth returns Echo middleware that requires a session user. Exempt paths (login, callback, logout, AuthExempt) skip the check. Unauthenticated requests are redirected to the login route with a redirect parameter.
-func RequireAuth(sm SessionManager, routes *AuthRoutes) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if IsAuthExemptPath(c.Path(), routes) {
-				return next(c)
+// RequireAuth returns standard middleware that requires a session user. Exempt paths (login, callback, logout, AuthExempt) skip the check. Unauthenticated requests are redirected to the login route with a redirect parameter.
+func RequireAuth(sm SessionManager, routes *AuthRoutes) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsAuthExemptPath(r.URL.Path, routes) {
+				next.ServeHTTP(w, r)
+				return
 			}
-			if _, err := GetString(sm, c, SessionKeyUser); err != nil {
-				return c.Redirect(http.StatusFound, loginRedirectURL(routes, c.Request().RequestURI))
+			if _, err := GetString(sm, r, SessionKeyUser); err != nil {
+				http.Redirect(w, r, loginRedirectURL(routes, r.RequestURI), http.StatusFound)
+				return
 			}
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
-// SetupAuth initializes the authentication middleware and routes
-func (a *AuthHandlerConfig) SetupAuth(e *echo.Echo) {
-	e.Use(SecurityHeadersMiddleware(a.SecurityHeaders))
-	e.Use(RequireAuth(a.SessionMgr, a.AuthRoutes))
-	if a.CSRF != nil {
-		e.Use(CSRFTokenResponseHeader(a.SessionMgr, a.CSRF.HeaderName))
-	}
-
+// SetupAuth initializes the authentication middleware and routes on a ServeMux.
+// Middleware must be applied by the caller wrapping the mux. Use Middleware() to get
+// the middleware chain. This method registers the auth handler routes on the mux.
+func (a *AuthHandlerConfig) SetupAuth(mux *http.ServeMux) {
 	routes := a.AuthRoutes
-	e.GET(routes.Login, a.loginHandler())
-	e.GET(routes.Callback, a.callbackHandler())
-	e.POST(routes.Logout, a.logoutHandler())
+	mux.HandleFunc("GET "+routes.Login, a.LoginHandler())
+	mux.HandleFunc("GET "+routes.Callback, a.CallbackHandler())
+	mux.HandleFunc("POST "+routes.Logout, a.LogoutHandler())
+}
+
+// Middleware returns the standard middleware chain for auth: security headers,
+// require-auth, and CSRF token response header. Apply this by wrapping your mux.
+func (a *AuthHandlerConfig) Middleware() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		h := next
+		if a.CSRF != nil {
+			h = CSRFTokenResponseHeader(a.SessionMgr, a.CSRF.HeaderName)(h)
+		}
+		h = RequireAuth(a.SessionMgr, a.AuthRoutes)(h)
+		h = SecurityHeadersMiddleware(a.SecurityHeaders)(h)
+		return h
+	}
 }
 
 func safeRedirectTarget(a *AuthHandlerConfig) string {
@@ -75,168 +87,210 @@ func safeRedirectTarget(a *AuthHandlerConfig) string {
 	return "/"
 }
 
-// loginHandler creates a handler function for the login route
-func (a *AuthHandlerConfig) loginHandler() echo.HandlerFunc {
-	return func(c echo.Context) error {
+// requestScheme returns "https" if the request appears to be over TLS, otherwise "http".
+func requestScheme(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		return proto
+	}
+	return "http"
+}
+
+// LoginHandler creates a handler function for the login route
+func (a *AuthHandlerConfig) LoginHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		csrfState, err := GenerateState()
 		if err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to generate state", err)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to generate state", err)
+			return
 		}
 
-		originalPath := c.QueryParam("redirect")
+		originalPath := r.URL.Query().Get("redirect")
 		if originalPath == "" {
-			originalPath = c.Request().RequestURI
+			originalPath = r.RequestURI
 		}
-		baseURL := c.Scheme() + "://" + c.Request().Host
+		baseURL := requestScheme(r) + "://" + r.Host
 		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
 		if err != nil {
-			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+			http.Redirect(w, r, safeRedirectTarget(a), http.StatusFound)
+			return
 		}
 		state := EncodeStatePayload(csrfState, safePath)
 
-		if err := a.SessionMgr.Set(c, SessionKeyOAuthState, state); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		if err := a.SessionMgr.Set(r, SessionKeyOAuthState, state); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to save session", err)
+			return
 		}
 
 		codeVerifier, err := GenerateCodeVerifier()
 		if err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to generate code verifier", err)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to generate code verifier", err)
+			return
 		}
 		codeChallenge := GenerateCodeChallenge(codeVerifier)
-		if err := a.SessionMgr.Set(c, SessionKeyCodeVerifier, codeVerifier); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		if err := a.SessionMgr.Set(r, SessionKeyCodeVerifier, codeVerifier); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to save session", err)
+			return
 		}
 		nonce, err := GenerateState()
 		if err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to generate nonce", err)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to generate nonce", err)
+			return
 		}
-		if err := a.SessionMgr.Set(c, SessionKeyOAuthNonce, nonce); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to save nonce", err)
+		if err := a.SessionMgr.Set(r, SessionKeyOAuthNonce, nonce); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to save nonce", err)
+			return
 		}
 		loginURL := a.GetLoginURL(state, codeChallenge, nonce)
-		return c.Redirect(http.StatusTemporaryRedirect, loginURL)
+		http.Redirect(w, r, loginURL, http.StatusTemporaryRedirect)
 	}
 }
 
-// callbackHandler creates a handler function for the callback route
-func (a *AuthHandlerConfig) callbackHandler() echo.HandlerFunc {
-	return func(c echo.Context) error {
-		expectedState, err := GetString(a.SessionMgr, c, SessionKeyOAuthState)
+// CallbackHandler creates a handler function for the callback route
+func (a *AuthHandlerConfig) CallbackHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		expectedState, err := GetString(a.SessionMgr, r, SessionKeyOAuthState)
 		if err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to get session", err)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to get session", err)
+			return
 		}
 
-		receivedState := c.QueryParam("state")
+		receivedState := r.URL.Query().Get("state")
 		if subtle.ConstantTimeCompare([]byte(receivedState), []byte(expectedState)) != 1 {
-			_ = a.SessionMgr.Delete(c, SessionKeyOAuthState)
-			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
-			return c.Redirect(http.StatusFound, loginRedirectURL(a.AuthRoutes, c.Request().RequestURI))
+			_ = a.SessionMgr.Delete(r, SessionKeyOAuthState)
+			_ = a.SessionMgr.Delete(r, SessionKeyCodeVerifier)
+			http.Redirect(w, r, loginRedirectURL(a.AuthRoutes, r.RequestURI), http.StatusFound)
+			return
 		}
 
 		originalPath, err := DecodeStatePayload(expectedState)
 		if err != nil {
-			_ = a.SessionMgr.Delete(c, SessionKeyOAuthState)
-			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
+			_ = a.SessionMgr.Delete(r, SessionKeyOAuthState)
+			_ = a.SessionMgr.Delete(r, SessionKeyCodeVerifier)
 			if a.LoginURLRedirect != "" {
-				return c.Redirect(http.StatusFound, a.LoginURLRedirect)
+				http.Redirect(w, r, a.LoginURLRedirect, http.StatusFound)
+				return
 			}
 			msg := "Invalid state data"
 			if errors.Is(err, ErrInvalidStateFormat) {
 				msg = "Invalid state format"
 			}
-			return a.handleError(c, http.StatusBadRequest, msg, err)
+			a.handleError(w, r, http.StatusBadRequest, msg, err)
+			return
 		}
 
-		if err := a.SessionMgr.Delete(c, SessionKeyOAuthState); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to clear state from session", err)
+		if err := a.SessionMgr.Delete(r, SessionKeyOAuthState); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to clear state from session", err)
+			return
 		}
 
-		codeVerifier, err := GetString(a.SessionMgr, c, SessionKeyCodeVerifier)
+		codeVerifier, err := GetString(a.SessionMgr, r, SessionKeyCodeVerifier)
 		if err != nil {
-			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
-			return a.handleError(c, http.StatusBadRequest, "Code verifier not found", err)
+			_ = a.SessionMgr.Delete(r, SessionKeyCodeVerifier)
+			a.handleError(w, r, http.StatusBadRequest, "Code verifier not found", err)
+			return
 		}
-		code := c.QueryParam("code")
+		code := r.URL.Query().Get("code")
 		if code == "" {
-			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
-			return a.handleError(c, http.StatusBadRequest, "Authorization code not provided", ErrAuthorizationCodeNotProvided)
+			_ = a.SessionMgr.Delete(r, SessionKeyCodeVerifier)
+			a.handleError(w, r, http.StatusBadRequest, "Authorization code not provided", ErrAuthorizationCodeNotProvided)
+			return
 		}
-		token, err := a.ExchangeToken(c.Request().Context(), code, codeVerifier)
+		token, err := a.ExchangeToken(r.Context(), code, codeVerifier)
 		if err != nil {
-			_ = a.SessionMgr.Delete(c, SessionKeyCodeVerifier)
-			return a.handleError(c, http.StatusInternalServerError, "Failed to exchange token", err)
+			_ = a.SessionMgr.Delete(r, SessionKeyCodeVerifier)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to exchange token", err)
+			return
 		}
-		if err := a.SessionMgr.Delete(c, SessionKeyCodeVerifier); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to clear code verifier", err)
+		if err := a.SessionMgr.Delete(r, SessionKeyCodeVerifier); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to clear code verifier", err)
+			return
 		}
 		idToken, ok := token.Extra("id_token").(string)
 		if !ok {
-			return a.handleError(c, http.StatusInternalServerError, "ID token not found in token response", nil)
+			a.handleError(w, r, http.StatusInternalServerError, "ID token not found in token response", nil)
+			return
 		}
-		claims, err := a.VerifyIDToken(c.Request().Context(), idToken)
+		claims, err := a.VerifyIDToken(r.Context(), idToken)
 		if err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to verify ID token", err)
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to verify ID token", err)
+			return
 		}
-		expectedNonce, err := GetString(a.SessionMgr, c, SessionKeyOAuthNonce)
+		expectedNonce, err := GetString(a.SessionMgr, r, SessionKeyOAuthNonce)
 		if err != nil {
-			return a.handleError(c, http.StatusBadRequest, "Nonce not found", err)
+			a.handleError(w, r, http.StatusBadRequest, "Nonce not found", err)
+			return
 		}
-		if err := a.SessionMgr.Delete(c, SessionKeyOAuthNonce); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to clear nonce", err)
+		if err := a.SessionMgr.Delete(r, SessionKeyOAuthNonce); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to clear nonce", err)
+			return
 		}
 		claimNonce, _ := claims["nonce"].(string)
 		if len(claimNonce) != len(expectedNonce) || subtle.ConstantTimeCompare([]byte(claimNonce), []byte(expectedNonce)) != 1 {
-			return a.handleError(c, http.StatusBadRequest, "Nonce mismatch", ErrNonceMismatch)
+			a.handleError(w, r, http.StatusBadRequest, "Nonce mismatch", ErrNonceMismatch)
+			return
 		}
 		userVal := userClaimValue(claims, a.UserClaim)
 		if userVal == "" {
-			return a.handleError(c, http.StatusInternalServerError, "No user claim found in token", nil)
+			a.handleError(w, r, http.StatusInternalServerError, "No user claim found in token", nil)
+			return
 		}
 		if renewer, ok := a.SessionMgr.(SessionTokenRenewer); ok {
-			if err := renewer.RenewToken(c); err != nil {
-				return a.handleError(c, http.StatusInternalServerError, "Failed to renew session token", err)
+			if err := renewer.RenewToken(r); err != nil {
+				a.handleError(w, r, http.StatusInternalServerError, "Failed to renew session token", err)
+				return
 			}
 		}
-		if err := a.SessionMgr.Set(c, SessionKeyUser, userVal); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		if err := a.SessionMgr.Set(r, SessionKeyUser, userVal); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to save session", err)
+			return
 		}
-		if err := SaveSessionValueClaims(a.SessionMgr, c, claims, a.SessionValueClaims); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to save session", err)
+		if err := SaveSessionValueClaims(a.SessionMgr, r, claims, a.SessionValueClaims); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to save session", err)
+			return
 		}
-		if _, err := GetOrCreateCSRFToken(a.SessionMgr, c); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to create CSRF token", err)
+		if _, err := GetOrCreateCSRFToken(a.SessionMgr, r); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to create CSRF token", err)
+			return
 		}
-		baseURL := c.Scheme() + "://" + c.Request().Host
+		baseURL := requestScheme(r) + "://" + r.Host
 		safePath, err := ValidatePostLoginRedirect(originalPath, baseURL, a.URLValidation)
 		if err != nil {
-			return c.Redirect(http.StatusFound, safeRedirectTarget(a))
+			http.Redirect(w, r, safeRedirectTarget(a), http.StatusFound)
+			return
 		}
-		return c.Redirect(http.StatusFound, safePath)
+		http.Redirect(w, r, safePath, http.StatusFound)
 	}
 }
 
-// logoutHandler creates a handler function for the logout route
-func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
-	return func(c echo.Context) error {
+// LogoutHandler creates a handler function for the logout route
+func (a *AuthHandlerConfig) LogoutHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		if a.CSRF != nil && a.CSRF.EnableLogoutCSRF {
-			expected, err := GetString(a.SessionMgr, c, SessionKeyCSRFToken)
+			expected, err := GetString(a.SessionMgr, r, SessionKeyCSRFToken)
 			if err != nil {
-				return a.handleError(c, http.StatusForbidden, "CSRF token not found", err)
+				a.handleError(w, r, http.StatusForbidden, "CSRF token not found", err)
+				return
 			}
-			received := c.Request().Header.Get(a.CSRF.HeaderName)
+			received := r.Header.Get(a.CSRF.HeaderName)
 			if received == "" {
-				received = c.FormValue(a.CSRF.FormFieldName)
+				received = r.FormValue(a.CSRF.FormFieldName)
 			}
 			if len(received) != len(expected) || subtle.ConstantTimeCompare([]byte(received), []byte(expected)) != 1 {
-				return a.handleError(c, http.StatusForbidden, "Invalid CSRF token", nil)
+				a.handleError(w, r, http.StatusForbidden, "Invalid CSRF token", nil)
+				return
 			}
 		}
-		if err := a.SessionMgr.ClearInvalidate(c); err != nil {
-			return a.handleError(c, http.StatusInternalServerError, "Failed to clear/invalidate session", err)
+		if err := a.SessionMgr.ClearInvalidate(r); err != nil {
+			a.handleError(w, r, http.StatusInternalServerError, "Failed to clear/invalidate session", err)
+			return
 		}
 
 		if err := ValidateRedirectURL(a.LogoutURLRedirect, a.URLValidation); err != nil {
-			return a.handleError(c, http.StatusBadRequest, "Invalid redirect URL", err)
+			a.handleError(w, r, http.StatusBadRequest, "Invalid redirect URL", err)
+			return
 		}
 
 		if a.EndSessionEndpoint != "" {
@@ -245,9 +299,10 @@ func (a *AuthHandlerConfig) logoutHandler() echo.HandlerFunc {
 				sep = "&"
 			}
 			logoutURL := a.EndSessionEndpoint + sep + "post_logout_redirect_uri=" + url.QueryEscape(a.LogoutURLRedirect)
-			return c.Redirect(http.StatusFound, logoutURL)
+			http.Redirect(w, r, logoutURL, http.StatusFound)
+			return
 		}
-		return c.Redirect(http.StatusFound, a.LogoutURLRedirect)
+		http.Redirect(w, r, a.LogoutURLRedirect, http.StatusFound)
 	}
 }
 
@@ -319,9 +374,9 @@ func problemTypeForErr(err error) string {
 	return "about:blank"
 }
 
-func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message string, err error) error {
+func (a *AuthHandlerConfig) handleError(w http.ResponseWriter, r *http.Request, status int, message string, err error) {
 	if err != nil {
-		c.Logger().Errorf("Auth error: %s - %v", message, err)
+		log.Printf("Auth error: %s - %v", message, err)
 	}
 
 	ptype := problemTypeForErr(err)
@@ -338,8 +393,8 @@ func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message stri
 	if a.ErrorConfig != nil && a.ErrorConfig.ShowDetails && err != nil {
 		problem.Detail = err.Error()
 	}
-	if req := c.Request(); req != nil && req.URL != nil {
-		problem.Instance = c.Scheme() + "://" + req.Host + req.URL.RequestURI()
+	if r != nil && r.URL != nil {
+		problem.Instance = requestScheme(r) + "://" + r.Host + r.URL.RequestURI()
 	}
 	var sessionErr *SessionError
 	if errors.As(err, &sessionErr) {
@@ -357,6 +412,7 @@ func (a *AuthHandlerConfig) handleError(c echo.Context, status int, message stri
 		problem.Reason = configErr.Reason
 	}
 
-	c.Response().Header().Set("Content-Type", "application/problem+json")
-	return c.JSON(status, problem)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(problem)
 }

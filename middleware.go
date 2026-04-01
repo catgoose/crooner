@@ -1,7 +1,7 @@
 package crooner
 
 import (
-	"github.com/labstack/echo/v4"
+	"net/http"
 )
 
 type securityHeaderSpec struct {
@@ -18,11 +18,11 @@ var securityHeaderSpecs = []securityHeaderSpec{
 	{key: "X-XSS-Protection", def: "1; mode=block", getVal: func(h *SecurityHeadersConfig) string { return h.XXSSProtection }},
 }
 
-// SecurityHeadersMiddleware returns Echo middleware that applies SecurityHeadersConfig to responses.
+// SecurityHeadersMiddleware returns standard middleware that applies SecurityHeadersConfig to responses.
 // If cfg is nil, defaults are used for all headers.
-func SecurityHeadersMiddleware(cfg *SecurityHeadersConfig) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+func SecurityHeadersMiddleware(cfg *SecurityHeadersConfig) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := cfg
 			if h == nil {
 				h = &SecurityHeadersConfig{}
@@ -32,28 +32,28 @@ func SecurityHeadersMiddleware(cfg *SecurityHeadersConfig) echo.MiddlewareFunc {
 				if val == "" {
 					val = spec.def
 				}
-				c.Response().Header().Set(spec.key, val)
+				w.Header().Set(spec.key, val)
 			}
-			if h.StrictTransportSecurity != "" && c.Scheme() == "https" {
-				c.Response().Header().Set("Strict-Transport-Security", h.StrictTransportSecurity)
+			if h.StrictTransportSecurity != "" && requestScheme(r) == "https" {
+				w.Header().Set("Strict-Transport-Security", h.StrictTransportSecurity)
 			}
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }
 
-// CSRFTokenResponseHeader returns Echo middleware that sets the CSRF token on the response
+// CSRFTokenResponseHeader returns standard middleware that sets the CSRF token on the response
 // when the session has an authenticated user. Use responseHeaderName (e.g. "X-CSRF-Token")
 // so the client can read it and send it on state-changing requests.
-func CSRFTokenResponseHeader(sm SessionManager, responseHeaderName string) echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			if _, err := GetString(sm, c, SessionKeyUser); err == nil {
-				if token, err := GetOrCreateCSRFToken(sm, c); err == nil {
-					c.Response().Header().Set(responseHeaderName, token)
+func CSRFTokenResponseHeader(sm SessionManager, responseHeaderName string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if _, err := GetString(sm, r, SessionKeyUser); err == nil {
+				if token, err := GetOrCreateCSRFToken(sm, r); err == nil {
+					w.Header().Set(responseHeaderName, token)
 				}
 			}
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

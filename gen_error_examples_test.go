@@ -9,8 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/labstack/echo/v4"
 )
 
 func TestGenerateErrorExamples(t *testing.T) {
@@ -30,7 +28,6 @@ func TestGenerateErrorExamples(t *testing.T) {
 
 	a := minimalAuthHandlerConfig(newMapSessionManager())
 	a.ErrorConfig = &ErrorConfig{ShowDetails: true}
-	e := echo.New()
 
 	type case_ struct {
 		slug   string
@@ -55,10 +52,7 @@ func TestGenerateErrorExamples(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/callback", nil)
 		req.Host = "example.com"
 		rec := httptest.NewRecorder()
-		ctx := e.NewContext(req, rec)
-		if err := a.handleError(ctx, c.status, c.msg, c.err); err != nil {
-			t.Fatalf("%s: handleError: %v", c.slug, err)
-		}
+		a.handleError(rec, req, c.status, c.msg, c.err)
 		var pd ProblemDetails
 		if err := json.NewDecoder(rec.Body).Decode(&pd); err != nil {
 			t.Fatalf("%s: decode: %v", c.slug, err)

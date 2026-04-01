@@ -4,8 +4,6 @@ import (
 	"crypto/subtle"
 	"net/http"
 	"strings"
-
-	"github.com/labstack/echo/v4"
 )
 
 var unsafeMethods = map[string]bool{
@@ -54,9 +52,9 @@ func isCSRFExemptPath(path string, exempt []string) bool {
 	return false
 }
 
-// CSRF returns Echo middleware that validates CSRF tokens on unsafe methods (POST, PUT, PATCH, DELETE)
+// CSRF returns standard middleware that validates CSRF tokens on unsafe methods (POST, PUT, PATCH, DELETE)
 // and sets the token on the response for safe methods when the session has a user.
-func CSRF(sm SessionManager, opts ...CSRFOption) echo.MiddlewareFunc {
+func CSRF(sm SessionManager, opts ...CSRFOption) func(http.Handler) http.Handler {
 	o := &csrfOpts{
 		headerName:    "X-CSRF-Token",
 		formFieldName: "csrf_token",
@@ -64,32 +62,34 @@ func CSRF(sm SessionManager, opts ...CSRFOption) echo.MiddlewareFunc {
 	for _, opt := range opts {
 		opt(o)
 	}
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			method := c.Request().Method
-			path := c.Request().URL.Path
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			method := r.Method
+			path := r.URL.Path
 			if unsafeMethods[method] {
 				if !isCSRFExemptPath(path, o.exemptPaths) {
-					expected, err := GetString(sm, c, SessionKeyCSRFToken)
+					expected, err := GetString(sm, r, SessionKeyCSRFToken)
 					if err != nil {
-						return c.NoContent(http.StatusForbidden)
+						w.WriteHeader(http.StatusForbidden)
+						return
 					}
-					received := c.Request().Header.Get(o.headerName)
+					received := r.Header.Get(o.headerName)
 					if received == "" {
-						received = c.FormValue(o.formFieldName)
+						received = r.FormValue(o.formFieldName)
 					}
 					if len(received) != len(expected) || subtle.ConstantTimeCompare([]byte(received), []byte(expected)) != 1 {
-						return c.NoContent(http.StatusForbidden)
+						w.WriteHeader(http.StatusForbidden)
+						return
 					}
 				}
 			} else {
-				if _, err := GetString(sm, c, SessionKeyUser); err == nil {
-					if token, err := GetOrCreateCSRFToken(sm, c); err == nil {
-						c.Response().Header().Set(o.headerName, token)
+				if _, err := GetString(sm, r, SessionKeyUser); err == nil {
+					if token, err := GetOrCreateCSRFToken(sm, r); err == nil {
+						w.Header().Set(o.headerName, token)
 					}
 				}
 			}
-			return next(c)
-		}
+			next.ServeHTTP(w, r)
+		})
 	}
 }

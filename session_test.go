@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/labstack/echo/v4"
 )
 
 // mapSessionManager is an in-memory SessionManager for tests.
@@ -21,7 +19,7 @@ func newMapSessionManager() *mapSessionManager {
 	return &mapSessionManager{data: make(map[string]any)}
 }
 
-func (m *mapSessionManager) Get(c echo.Context, key string) (any, error) {
+func (m *mapSessionManager) Get(r *http.Request, key string) (any, error) {
 	v, ok := m.data[key]
 	if !ok {
 		return nil, nil
@@ -29,26 +27,26 @@ func (m *mapSessionManager) Get(c echo.Context, key string) (any, error) {
 	return v, nil
 }
 
-func (m *mapSessionManager) Set(c echo.Context, key string, value any) error {
+func (m *mapSessionManager) Set(r *http.Request, key string, value any) error {
 	m.data[key] = value
 	return nil
 }
 
-func (m *mapSessionManager) Delete(c echo.Context, key string) error {
+func (m *mapSessionManager) Delete(r *http.Request, key string) error {
 	delete(m.data, key)
 	return nil
 }
 
-func (m *mapSessionManager) Clear(c echo.Context) error {
+func (m *mapSessionManager) Clear(r *http.Request) error {
 	m.data = make(map[string]any)
 	return nil
 }
 
-func (m *mapSessionManager) Invalidate(c echo.Context) error {
+func (m *mapSessionManager) Invalidate(r *http.Request) error {
 	return nil
 }
 
-func (m *mapSessionManager) ClearInvalidate(c echo.Context) error {
+func (m *mapSessionManager) ClearInvalidate(r *http.Request) error {
 	m.data = make(map[string]any)
 	return nil
 }
@@ -57,7 +55,7 @@ type failingSessionManager struct {
 	data map[string]any
 }
 
-func (f *failingSessionManager) Get(c echo.Context, key string) (any, error) {
+func (f *failingSessionManager) Get(r *http.Request, key string) (any, error) {
 	v, ok := f.data[key]
 	if !ok {
 		return nil, nil
@@ -67,34 +65,31 @@ func (f *failingSessionManager) Get(c echo.Context, key string) (any, error) {
 
 var errSetFailed = errors.New("set failed")
 
-func (f *failingSessionManager) Set(c echo.Context, key string, value any) error {
+func (f *failingSessionManager) Set(r *http.Request, key string, value any) error {
 	return errSetFailed
 }
 
-func (f *failingSessionManager) Delete(c echo.Context, key string) error {
+func (f *failingSessionManager) Delete(r *http.Request, key string) error {
 	delete(f.data, key)
 	return nil
 }
 
-func (f *failingSessionManager) Clear(c echo.Context) error {
+func (f *failingSessionManager) Clear(r *http.Request) error {
 	f.data = make(map[string]any)
 	return nil
 }
 
-func (f *failingSessionManager) Invalidate(c echo.Context) error {
+func (f *failingSessionManager) Invalidate(r *http.Request) error {
 	return nil
 }
 
-func (f *failingSessionManager) ClearInvalidate(c echo.Context) error {
+func (f *failingSessionManager) ClearInvalidate(r *http.Request) error {
 	f.data = make(map[string]any)
 	return nil
 }
 
-func echoContext() echo.Context {
-	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	return e.NewContext(req, rec)
+func testRequest() *http.Request {
+	return httptest.NewRequest(http.MethodGet, "/", nil)
 }
 
 func TestSessionError_Unwrap(t *testing.T) {
@@ -156,9 +151,9 @@ func TestPersistentCookieSuffix_DifferentInputs_DifferentOutputs(t *testing.T) {
 
 func TestGetString_Found(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "user", "alice")
-	got, err := GetString(sm, c, "user")
+	r := testRequest()
+	_ = sm.Set(r, "user", "alice")
+	got, err := GetString(sm, r, "user")
 	if err != nil {
 		t.Fatalf("GetString: %v", err)
 	}
@@ -169,8 +164,8 @@ func TestGetString_Found(t *testing.T) {
 
 func TestGetString_NotFound(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_, err := GetString(sm, c, "missing")
+	r := testRequest()
+	_, err := GetString(sm, r, "missing")
 	if err == nil {
 		t.Fatal("GetString(missing) = nil error, want SessionError")
 	}
@@ -184,9 +179,9 @@ func TestGetString_NotFound(t *testing.T) {
 
 func TestGetString_InvalidType(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "user", 123)
-	_, err := GetString(sm, c, "user")
+	r := testRequest()
+	_ = sm.Set(r, "user", 123)
+	_, err := GetString(sm, r, "user")
 	if err == nil {
 		t.Fatal("GetString(int) = nil error, want SessionError")
 	}
@@ -200,9 +195,9 @@ func TestGetString_InvalidType(t *testing.T) {
 
 func TestGetInt_Found(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "count", 42)
-	got, err := GetInt(sm, c, "count")
+	r := testRequest()
+	_ = sm.Set(r, "count", 42)
+	got, err := GetInt(sm, r, "count")
 	if err != nil {
 		t.Fatalf("GetInt: %v", err)
 	}
@@ -213,8 +208,8 @@ func TestGetInt_Found(t *testing.T) {
 
 func TestGetInt_NotFound(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_, err := GetInt(sm, c, "missing")
+	r := testRequest()
+	_, err := GetInt(sm, r, "missing")
 	if err == nil {
 		t.Fatal("GetInt(missing) = nil error, want SessionError")
 	}
@@ -225,9 +220,9 @@ func TestGetInt_NotFound(t *testing.T) {
 
 func TestGetInt_InvalidType(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "count", "not-an-int")
-	_, err := GetInt(sm, c, "count")
+	r := testRequest()
+	_ = sm.Set(r, "count", "not-an-int")
+	_, err := GetInt(sm, r, "count")
 	if err == nil {
 		t.Fatal("GetInt(string) = nil error, want SessionError")
 	}
@@ -238,9 +233,9 @@ func TestGetInt_InvalidType(t *testing.T) {
 
 func TestGetBool_Found(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "ok", true)
-	got, err := GetBool(sm, c, "ok")
+	r := testRequest()
+	_ = sm.Set(r, "ok", true)
+	got, err := GetBool(sm, r, "ok")
 	if err != nil {
 		t.Fatalf("GetBool: %v", err)
 	}
@@ -251,8 +246,8 @@ func TestGetBool_Found(t *testing.T) {
 
 func TestGetBool_NotFound(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_, err := GetBool(sm, c, "missing")
+	r := testRequest()
+	_, err := GetBool(sm, r, "missing")
 	if err == nil {
 		t.Fatal("GetBool(missing) = nil error, want SessionError")
 	}
@@ -263,9 +258,9 @@ func TestGetBool_NotFound(t *testing.T) {
 
 func TestGetBool_InvalidType(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "ok", "yes")
-	_, err := GetBool(sm, c, "ok")
+	r := testRequest()
+	_ = sm.Set(r, "ok", "yes")
+	_, err := GetBool(sm, r, "ok")
 	if err == nil {
 		t.Fatal("GetBool(string) = nil error, want SessionError")
 	}
@@ -276,15 +271,15 @@ func TestGetBool_InvalidType(t *testing.T) {
 
 func TestGetOrCreateCSRFToken_CreatesWhenMissing(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	token, err := GetOrCreateCSRFToken(sm, c)
+	r := testRequest()
+	token, err := GetOrCreateCSRFToken(sm, r)
 	if err != nil {
 		t.Fatalf("GetOrCreateCSRFToken: %v", err)
 	}
 	if token == "" {
 		t.Error("GetOrCreateCSRFToken returned empty token")
 	}
-	stored, err := GetString(sm, c, SessionKeyCSRFToken)
+	stored, err := GetString(sm, r, SessionKeyCSRFToken)
 	if err != nil {
 		t.Fatalf("GetString(csrf_token): %v", err)
 	}
@@ -295,9 +290,9 @@ func TestGetOrCreateCSRFToken_CreatesWhenMissing(t *testing.T) {
 
 func TestGetOrCreateCSRFToken_ReturnsExisting(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, SessionKeyCSRFToken, "existing-token")
-	token, err := GetOrCreateCSRFToken(sm, c)
+	r := testRequest()
+	_ = sm.Set(r, SessionKeyCSRFToken, "existing-token")
+	token, err := GetOrCreateCSRFToken(sm, r)
 	if err != nil {
 		t.Fatalf("GetOrCreateCSRFToken: %v", err)
 	}
@@ -308,12 +303,12 @@ func TestGetOrCreateCSRFToken_ReturnsExisting(t *testing.T) {
 
 func TestSaveSessionValueClaims_NilValueClaims(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	err := SaveSessionValueClaims(sm, c, map[string]any{"roles": []string{"admin"}}, nil)
+	r := testRequest()
+	err := SaveSessionValueClaims(sm, r, map[string]any{"roles": []string{"admin"}}, nil)
 	if err != nil {
 		t.Errorf("SaveSessionValueClaims(nil valueClaims) = %v", err)
 	}
-	_, err = GetString(sm, c, "roles")
+	_, err = GetString(sm, r, "roles")
 	if err == nil {
 		t.Error("expected no session key set")
 	}
@@ -321,14 +316,14 @@ func TestSaveSessionValueClaims_NilValueClaims(t *testing.T) {
 
 func TestSaveSessionValueClaims_StringClaim(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
+	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
 	valueClaims := []map[string]string{{"email": "email"}}
-	err := SaveSessionValueClaims(sm, c, claims, valueClaims)
+	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
 	}
-	got, err := GetString(sm, c, "email")
+	got, err := GetString(sm, r, "email")
 	if err != nil {
 		t.Fatalf("GetString: %v", err)
 	}
@@ -339,14 +334,14 @@ func TestSaveSessionValueClaims_StringClaim(t *testing.T) {
 
 func TestSaveSessionValueClaims_SliceClaimNormalized(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
+	r := testRequest()
 	claims := map[string]any{"roles": []any{"admin", "user"}}
 	valueClaims := []map[string]string{{"roles": "roles"}}
-	err := SaveSessionValueClaims(sm, c, claims, valueClaims)
+	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
 	}
-	val, _ := sm.Get(c, "roles")
+	val, _ := sm.Get(r, "roles")
 	sl, ok := val.([]string)
 	if !ok {
 		t.Fatalf("roles = %T, want []string", val)
@@ -358,14 +353,14 @@ func TestSaveSessionValueClaims_SliceClaimNormalized(t *testing.T) {
 
 func TestSaveSessionValueClaims_MissingClaim(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
+	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
 	valueClaims := []map[string]string{{"roles": "roles"}}
-	err := SaveSessionValueClaims(sm, c, claims, valueClaims)
+	err := SaveSessionValueClaims(sm, r, claims, valueClaims)
 	if err != nil {
 		t.Fatalf("SaveSessionValueClaims: %v", err)
 	}
-	_, err = GetString(sm, c, "roles")
+	_, err = GetString(sm, r, "roles")
 	if err == nil {
 		t.Error("roles should not be set when claim missing")
 	}
@@ -373,10 +368,10 @@ func TestSaveSessionValueClaims_MissingClaim(t *testing.T) {
 
 func TestSaveSessionValueClaims_SetFails(t *testing.T) {
 	fail := &failingSessionManager{data: make(map[string]any)}
-	c := echoContext()
+	r := testRequest()
 	claims := map[string]any{"email": "a@b.com"}
 	valueClaims := []map[string]string{{"email": "email"}}
-	err := SaveSessionValueClaims(fail, c, claims, valueClaims)
+	err := SaveSessionValueClaims(fail, r, claims, valueClaims)
 	if err != errSetFailed {
 		t.Errorf("SaveSessionValueClaims = %v, want errSetFailed", err)
 	}
@@ -483,10 +478,10 @@ func TestSCSManager_GetCookieName(t *testing.T) {
 
 func TestMapSessionManager_ClearInvalidate(t *testing.T) {
 	sm := newMapSessionManager()
-	c := echoContext()
-	_ = sm.Set(c, "user", "alice")
-	_ = sm.ClearInvalidate(c)
-	_, err := GetString(sm, c, "user")
+	r := testRequest()
+	_ = sm.Set(r, "user", "alice")
+	_ = sm.ClearInvalidate(r)
+	_, err := GetString(sm, r, "user")
 	if err == nil {
 		t.Error("GetString after ClearInvalidate = nil error")
 	}
@@ -501,22 +496,19 @@ func TestSCSManager_Operations(t *testing.T) {
 		t.Fatalf("NewSCSManager: %v", err)
 	}
 
-	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
 	var testErr error
 	handler := scsMgr.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := e.NewContext(r, httptest.NewRecorder())
-
 		// Set
-		if err := mgr.Set(c, "key1", "value1"); err != nil {
+		if err := mgr.Set(r, "key1", "value1"); err != nil {
 			testErr = fmt.Errorf("Set: %w", err)
 			return
 		}
 
 		// Get
-		val, err := mgr.Get(c, "key1")
+		val, err := mgr.Get(r, "key1")
 		if err != nil {
 			testErr = fmt.Errorf("Get: %w", err)
 			return
@@ -527,39 +519,39 @@ func TestSCSManager_Operations(t *testing.T) {
 		}
 
 		// Delete
-		if err := mgr.Delete(c, "key1"); err != nil {
+		if err := mgr.Delete(r, "key1"); err != nil {
 			testErr = fmt.Errorf("Delete: %w", err)
 			return
 		}
-		val, _ = mgr.Get(c, "key1")
+		val, _ = mgr.Get(r, "key1")
 		if val != nil {
 			testErr = fmt.Errorf("Get after Delete = %v, want nil", val)
 			return
 		}
 
 		// Set again, then Clear
-		_ = mgr.Set(c, "a", "1")
-		_ = mgr.Set(c, "b", "2")
-		if err := mgr.Clear(c); err != nil {
+		_ = mgr.Set(r, "a", "1")
+		_ = mgr.Set(r, "b", "2")
+		if err := mgr.Clear(r); err != nil {
 			testErr = fmt.Errorf("Clear: %w", err)
 			return
 		}
-		v, _ := mgr.Get(c, "a")
+		v, _ := mgr.Get(r, "a")
 		if v != nil {
 			testErr = fmt.Errorf("Get after Clear = %v, want nil", v)
 			return
 		}
 
 		// Invalidate
-		_ = mgr.Set(c, "x", "y")
-		if err := mgr.Invalidate(c); err != nil {
+		_ = mgr.Set(r, "x", "y")
+		if err := mgr.Invalidate(r); err != nil {
 			testErr = fmt.Errorf("Invalidate: %w", err)
 			return
 		}
 
 		// ClearInvalidate
-		_ = mgr.Set(c, "z", "w")
-		if err := mgr.ClearInvalidate(c); err != nil {
+		_ = mgr.Set(r, "z", "w")
+		if err := mgr.ClearInvalidate(r); err != nil {
 			testErr = fmt.Errorf("ClearInvalidate: %w", err)
 			return
 		}
@@ -579,20 +571,18 @@ func TestSCSManager_RenewToken(t *testing.T) {
 		t.Fatalf("NewSCSManager: %v", err)
 	}
 
-	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 
 	var testErr error
 	handler := scsMgr.LoadAndSave(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		c := e.NewContext(r, httptest.NewRecorder())
-		_ = mgr.Set(c, "user", "alice")
-		if err := mgr.RenewToken(c); err != nil {
+		_ = mgr.Set(r, "user", "alice")
+		if err := mgr.RenewToken(r); err != nil {
 			testErr = fmt.Errorf("RenewToken: %w", err)
 			return
 		}
 		// Verify data survives renewal
-		val, err := mgr.Get(c, "user")
+		val, err := mgr.Get(r, "user")
 		if err != nil {
 			testErr = fmt.Errorf("Get after RenewToken: %w", err)
 			return

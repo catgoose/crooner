@@ -4,11 +4,11 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
 	crooner "github.com/catgoose/crooner"
-	"github.com/labstack/echo/v4"
 )
 
 func main() {
@@ -41,8 +41,7 @@ func main() {
 		log.Fatalf("session manager: %v", err)
 	}
 
-	e := echo.New()
-	e.Use(echo.WrapMiddleware(scsMgr.LoadAndSave))
+	mux := http.NewServeMux()
 
 	routes := &crooner.AuthRoutes{
 		Login:    "/login",
@@ -63,19 +62,26 @@ func main() {
 	if os.Getenv("GEN_ERROR_EXAMPLES") == "1" {
 		params.ErrorConfig = &crooner.ErrorConfig{ShowDetails: true}
 	}
-	if err := crooner.NewAuthConfig(context.Background(), e, params); err != nil {
+	authHandler, err := crooner.NewAuthConfig(context.Background(), mux, params)
+	if err != nil {
 		log.Fatalf("auth config: %v", err)
 	}
 
-	e.GET("/", func(c echo.Context) error {
-		user, _ := crooner.GetString(sessionMgr, c, crooner.SessionKeyUser)
+	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+		user, _ := crooner.GetString(sessionMgr, r, crooner.SessionKeyUser)
 		if user == "" {
 			user = "anonymous"
 		}
-		return c.String(200, "OK\nuser: "+user)
+		w.WriteHeader(200)
+		w.Write([]byte("OK\nuser: " + user))
 	})
+
+	// Build middleware chain: session loading -> auth middleware -> mux
+	var handler http.Handler = mux
+	handler = authHandler.Middleware()(handler)
+	handler = scsMgr.LoadAndSave(handler)
 
 	addr := ":" + *port
 	log.Printf("app listening on %s", addr)
-	log.Fatal(e.Start(addr))
+	log.Fatal(http.ListenAndServe(addr, handler))
 }
