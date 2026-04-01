@@ -619,31 +619,6 @@ If you are using an in-memory session store and you restart the server, your ses
      │       to original URL    │                         │
 ```
 
-### Where crooner fits in the dothog ecosystem
-
-```
-                        ┌──────────────────────────────────────┐
-                        │              dothog app              │
-                        └──────────┬───────────────────────────┘
-                                   │
-          ┌────────────┬───────────┼───────────┬────────────┐
-          │            │           │           │            │
-     ┌────v────┐  ┌────v────┐ ┌───v────┐  ┌───v────┐  ┌───v─────┐
-     │*crooner*│  │ porter  │ │fraggle │  │ tavern │  │promolog │
-     │  auth   │  │  authz  │ │  sql   │  │  sse   │  │  logs   │
-     └────┬────┘  └─────────┘ └────────┘  └────────┘  └─────────┘
-          │
-          │ identity on context
-          v
-       porter reads it (optional)
-       handlers read it
-```
-
-Crooner is the front door. It handles the OAuth2/OIDC dance, manages sessions,
-and puts identity on the request context. Everything downstream — porter for
-authorization, handlers for business logic — reads identity from context
-without knowing how authentication happened.
-
 ## Questions? PRs?
 
 Open an issue or send a PR.
