@@ -43,6 +43,57 @@
 
 Crooner is an OIDC/OAuth2 client library for Go web applications using standard `net/http`. It handles PKCE login, callbacks, and session management with pluggable backends and secure defaults. Works with any OIDC-compliant provider -- Azure AD, Google, Okta, Auth0, Keycloak, etc.
 
+## Why
+
+**Without crooner:**
+
+```go
+provider, _ := oidc.NewProvider(ctx, issuerURL)
+oauth2Config := &oauth2.Config{
+    ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+    ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+    RedirectURL:  os.Getenv("OIDC_REDIRECT_URL"),
+    Endpoint:     provider.Endpoint(),
+    Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+}
+verifier := provider.Verifier(&oidc.Config{ClientID: oauth2Config.ClientID})
+
+// Generate PKCE challenge
+codeVerifier := generateRandomString(64)
+codeChallenge := sha256URLEncode(codeVerifier)
+
+// Generate state, store in session, build auth URL...
+state := generateRandomString(32)
+session.Set(r, "oauth_state", state)
+session.Set(r, "pkce_verifier", codeVerifier)
+http.Redirect(w, r, oauth2Config.AuthCodeURL(state,
+    oauth2.SetAuthURLParam("code_challenge", codeChallenge),
+    oauth2.SetAuthURLParam("code_challenge_method", "S256"),
+), http.StatusFound)
+
+// Then write the callback handler: validate state, exchange code with
+// verifier, verify ID token, extract claims, set session, redirect...
+```
+
+**With crooner:**
+
+```go
+sessionMgr, scsMgr, _ := crooner.NewSCSManager(
+    crooner.WithPersistentCookieName(secret, appName),
+    crooner.WithLifetime(12*time.Hour),
+)
+authHandler, _ := crooner.NewAuthConfig(ctx, mux, &crooner.AuthConfigParams{
+    IssuerURL:    os.Getenv("OIDC_ISSUER_URL"),
+    ClientID:     os.Getenv("OIDC_CLIENT_ID"),
+    ClientSecret: os.Getenv("OIDC_CLIENT_SECRET"),
+    RedirectURL:  os.Getenv("OIDC_REDIRECT_URL"),
+    SessionMgr:   sessionMgr,
+})
+handler = authHandler.Middleware()(mux)
+handler = scsMgr.LoadAndSave(handler)
+// Login, callback, logout, PKCE, state, session -- all handled.
+```
+
 ## What Is This?
 
 Crooner provides OIDC/OAuth2 authentication for Go web applications. It uses standard `net/http` patterns (`http.Handler`, `http.HandlerFunc`, middleware as `func(http.Handler) http.Handler`) with no framework dependencies beyond the Go standard library.
