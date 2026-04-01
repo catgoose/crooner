@@ -596,6 +596,54 @@ cd .. && ./scripts/run-pkce-sim.sh
 
 If you are using an in-memory session store and you restart the server, your session is gone. Crooner will restart the login flow. For production, use a persistent session store (Redis, SQLite, etc.).
 
+## Architecture
+
+### OAuth2/OIDC flow
+
+```
+  browser                    crooner                     IdP
+  ───────                    ───────                     ───
+     │                          │                         │
+     ├── GET /login ──────────► │                         │
+     │                          ├── redirect ────────────►│
+     │                          │   (PKCE + state)        │
+     │   ◄── redirect ─────────┤ ◄── callback ───────────┤
+     │       to /callback       │    (code + state)       │
+     │                          │                         │
+     │                          ├── exchange code ───────►│
+     │                          │◄── tokens ──────────────┤
+     │                          │                         │
+     │                          ├── verify ID token       │
+     │                          ├── create session        │
+     │   ◄── redirect ─────────┤                         │
+     │       to original URL    │                         │
+```
+
+### Where crooner fits in the dothog ecosystem
+
+```
+                        ┌──────────────────────────────────────┐
+                        │              dothog app              │
+                        └──────────┬───────────────────────────┘
+                                   │
+          ┌────────────┬───────────┼───────────┬────────────┐
+          │            │           │           │            │
+     ┌────v────┐  ┌────v────┐ ┌───v────┐  ┌───v────┐  ┌───v─────┐
+     │*crooner*│  │ porter  │ │fraggle │  │ tavern │  │promolog │
+     │  auth   │  │  authz  │ │  sql   │  │  sse   │  │  logs   │
+     └────┬────┘  └─────────┘ └────────┘  └────────┘  └─────────┘
+          │
+          │ identity on context
+          v
+       porter reads it (optional)
+       handlers read it
+```
+
+Crooner is the front door. It handles the OAuth2/OIDC dance, manages sessions,
+and puts identity on the request context. Everything downstream — porter for
+authorization, handlers for business logic — reads identity from context
+without knowing how authentication happened.
+
 ## Questions? PRs?
 
 Open an issue or send a PR.
