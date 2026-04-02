@@ -29,3 +29,6 @@ events.json
 
 # Build output (scripts and CI build into bin/)
 bin/
+
+# Compiled simulate binary
+simulate/simulate
