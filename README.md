@@ -99,6 +99,19 @@ handler = scsMgr.LoadAndSave(handler)
 
 Crooner provides OIDC/OAuth2 authentication for Go web applications. It uses standard `net/http` patterns (`http.Handler`, `http.HandlerFunc`, middleware as `func(http.Handler) http.Handler`) with no framework dependencies beyond the Go standard library.
 
+## Philosophy
+
+> _The student asked the master: "How do I manage authentication state?" The master replied: "The session is on the server. The cookie is on the client. The identity provider is someone else's problem." The student said: "But what about refresh tokens and--" The master had already returned a 302._
+
+Authentication is plumbing. Good plumbing disappears -- you turn the handle, water comes out, you don't think about the pipes. Crooner is the pipes.
+
+- **Standard net/http, nothing else.** Middleware is `func(http.Handler) http.Handler`. Session data lives in `context.Context`. No framework coupling, no interface pollution, no clever abstractions that collapse when you need to debug a 3 AM token expiry.
+- **The server holds the session.** The client gets a cookie. The cookie is opaque. The session contains the identity. This is how it has always worked. This is how it should work. The client does not need to know what a JWT is. The client does not want to know what a JWT is.
+- **PKCE by default, not by configuration.** The secure path is the only path. You don't opt into PKCE. You don't opt into state validation. You don't opt into cookie security flags. These are not features. They are the floor.
+- **Pluggable where it matters, opinionated where it doesn't.** Session backends are pluggable (SCS, Redis, SQLite, your own). The OIDC flow is not. You don't get to skip the state check. You don't get to store tokens in localStorage. Some choices are too important to be configurable.
+
+Crooner follows the [dothog design philosophy](https://github.com/catgoose/dothog/blob/main/PHILOSOPHY.md): the server controls state, the protocol does the work, and the developer writes less code because the defaults are already correct.
+
 ## Features
 
 - **PKCE/OIDC login for any provider**
@@ -618,6 +631,29 @@ If you are using an in-memory session store and you restart the server, your ses
      │   ◄── redirect ─────────┤                         │
      │       to original URL    │                         │
 ```
+
+<details>
+<summary>Mermaid version</summary>
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant C as Crooner
+    participant IdP as Identity Provider
+
+    B->>C: GET /login
+    C->>IdP: redirect (PKCE + state)
+    IdP->>B: login prompt
+    B->>IdP: credentials
+    IdP->>C: callback (code + state)
+    C->>IdP: exchange code
+    IdP->>C: tokens
+    C->>C: verify ID token
+    C->>C: create session
+    C->>B: redirect to original URL
+```
+
+</details>
 
 ## Questions? PRs?
 
