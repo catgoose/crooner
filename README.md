@@ -249,6 +249,7 @@ func main() {
   ```
 
 - `NewSCSManager` applies secure defaults. Only reach for advanced config when you have special requirements.
+- If you need a readable app-derived cookie name instead of a non-guessable one, use `crooner.DeriveSessionCookieName(appName)` with `crooner.WithCookieName(...)`.
 
 ### Content Security Policy (CSP) and Security Headers
 
@@ -311,6 +312,8 @@ Crooner uses idiomatic Go functional options for session config.
 | `WithLifetime(lifetime time.Duration)`             | Sets the session lifetime.                                                                                |
 | `WithStore(store scs.Store)`                       | Sets a custom session store backend (e.g., Redis).                                                        |
 
+`DeriveSessionCookieName(appName string)` returns a deterministic, valid cookie token name in the readable `crooner-<app>` convention. Crooner owns the `crooner-` prefix convention; app code still decides whether to use this readable name, a custom name, or the non-guessable `WithPersistentCookieName` convention.
+
 #### Example Usage
 
 ```go
@@ -336,7 +339,7 @@ handler := crooner.RequireAuth(sessionMgr, routes)(mux)
 
 ```go
 cfg := crooner.DefaultSecureSessionConfig()
-cfg.CookieName = "crooner-" + myCustomSuffix
+cfg.CookieName = crooner.DeriveSessionCookieName(appConfig.AppName)
 cfg.Lifetime = 7 * 24 * time.Hour
 cfg.CookieDomain = ".example.com"
 cfg.CookieSameSite = http.SameSiteStrictMode

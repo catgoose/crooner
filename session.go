@@ -15,9 +15,15 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	scs "github.com/alexedwards/scs/v2"
+)
+
+const (
+	sessionCookieNamePrefix   = "crooner-"
+	defaultSessionCookieLabel = "session"
 )
 
 // SessionManager abstracts session operations for pluggable backends (SCS, etc.)
@@ -218,7 +224,7 @@ type SessionConfig struct {
 // DefaultSecureSessionConfig returns a config with secure defaults.
 func DefaultSecureSessionConfig() SessionConfig {
 	return SessionConfig{
-		CookieName:     "crooner-" + randomSuffix(),
+		CookieName:     sessionCookieNamePrefix + randomSuffix(),
 		CookieSecure:   true,
 		CookieHTTPOnly: true,
 		CookieSameSite: http.SameSiteLaxMode,
@@ -293,7 +299,7 @@ func WithStore(store scs.Store) SessionOption {
 func WithPersistentCookieName(secret, appName string) SessionOption {
 	return func(cfg *SessionConfig) {
 		suffix := PersistentCookieSuffix(secret, appName)
-		cfg.CookieName = "crooner-" + suffix
+		cfg.CookieName = sessionCookieNamePrefix + suffix
 	}
 }
 
@@ -338,6 +344,49 @@ func PersistentCookieSuffix(secret, appName string) string {
 	h.Write([]byte(secret))
 	h.Write([]byte(appName))
 	return hex.EncodeToString(h.Sum(nil))[:16] // Use first 16 hex chars for brevity
+}
+
+// DeriveSessionCookieName returns a deterministic, valid cookie name from an app name.
+//
+// The returned name uses Crooner's readable cookie-name convention:
+// "crooner-" plus a sanitized app label. Use WithPersistentCookieName when you
+// need a non-guessable cookie name derived from a secret.
+func DeriveSessionCookieName(appName string) string {
+	appName = strings.TrimSpace(appName)
+	var b strings.Builder
+	lastWasSeparator := false
+
+	for i := 0; i < len(appName); i++ {
+		c := appName[i]
+		if isCookieNameLabelChar(c) {
+			b.WriteByte(toLowerASCII(c))
+			lastWasSeparator = false
+			continue
+		}
+		if b.Len() > 0 && !lastWasSeparator {
+			b.WriteByte('-')
+			lastWasSeparator = true
+		}
+	}
+
+	label := strings.Trim(b.String(), "-")
+	if label == "" {
+		label = defaultSessionCookieLabel
+	}
+	return sessionCookieNamePrefix + label
+}
+
+func isCookieNameLabelChar(c byte) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9')
+}
+
+func toLowerASCII(c byte) byte {
+	if c >= 'A' && c <= 'Z' {
+		return c + ('a' - 'A')
+	}
+	return c
 }
 
 // randomSuffix returns a random 16-character hex string for cookie names.

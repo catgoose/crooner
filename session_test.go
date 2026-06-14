@@ -149,6 +149,78 @@ func TestPersistentCookieSuffix_DifferentInputs_DifferentOutputs(t *testing.T) {
 	}
 }
 
+func TestDeriveSessionCookieName(t *testing.T) {
+	tests := []struct {
+		name    string
+		appName string
+		want    string
+	}{
+		{
+			name:    "simple",
+			appName: "Annex",
+			want:    "crooner-annex",
+		},
+		{
+			name:    "spaces and punctuation",
+			appName: "Annex Admin: Prod!",
+			want:    "crooner-annex-admin-prod",
+		},
+		{
+			name:    "collapses separators",
+			appName: "  My---App...API  ",
+			want:    "crooner-my-app-api",
+		},
+		{
+			name:    "non ascii falls back to separators",
+			appName: "Café Portal",
+			want:    "crooner-caf-portal",
+		},
+		{
+			name:    "empty falls back",
+			appName: "",
+			want:    "crooner-session",
+		},
+		{
+			name:    "only punctuation falls back",
+			appName: " !@#$ ",
+			want:    "crooner-session",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := DeriveSessionCookieName(tt.appName)
+			if got != tt.want {
+				t.Fatalf("DeriveSessionCookieName(%q) = %q, want %q", tt.appName, got, tt.want)
+			}
+			if !isValidCookieTokenName(got) {
+				t.Fatalf("DeriveSessionCookieName(%q) = %q, not a valid cookie token name", tt.appName, got)
+			}
+		})
+	}
+}
+
+func isValidCookieTokenName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') {
+			continue
+		}
+		switch c {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func TestGetString_Found(t *testing.T) {
 	sm := newMapSessionManager()
 	r := testRequest()
